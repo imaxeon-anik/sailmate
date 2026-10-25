@@ -1,6 +1,8 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="86" height="86" viewBox="0 0 86 86">
-  <rect width="86" height="86" rx="24" fill="#17445c"/>
-  <path d="M43 15v42H20z" fill="#e7f5ff"/>
-  <path d="M48 25v32h19z" fill="#57cfce"/>
-  <path d="M17 62h52l-9 10H29z" fill="#57cfce"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="86" height="86" viewBox="0 0 128 128">
+  <title>Sailmate — Mate</title>
+  <rect width="128" height="128" rx="34" fill="#17445c"/>
+  <path d="M51 26c-18 0-28 13-28 29v10l-8 12h11v15h25V77l14-11-14-10z" fill="#e4f6ff"/>
+  <path d="M77 102c18 0 28-13 28-29V63l8-12h-11V36H77v15L63 62l14 10z" fill="#63d9d2"/>
+  <circle cx="42" cy="52" r="3" fill="#17445c"/>
+  <circle cx="86" cy="76" r="3" fill="#17445c"/>
 </svg>

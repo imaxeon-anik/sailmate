@@ -267,6 +267,8 @@ void ChatController::finishReply()
         failure = tr("The provider rejected access. Check the API key and permissions.");
     else if (status == 429)
         failure = tr("The provider rate limit or quota was reached. Check billing and retry later.");
+    else if (status == 0)
+        failure = tr("The network request failed. Check your connection.");
     else if (status < 200 || status >= 300)
         failure = tr("The provider request failed (HTTP %1).").arg(status);
     else if (m_reply->error() != QNetworkReply::NoError)
@@ -428,6 +430,10 @@ void ChatController::retry()
 {
     if (!idle())
         return;
+    if (m_models.isEmpty() && supportedProvider(m_provider) && !m_key.isEmpty()) {
+        fetchModels(LoadModels, m_provider, m_key);
+        return;
+    }
     for (int i = m_messages.size() - 1; i >= 0; --i) {
         const QVariantMap entry = m_messages.at(i).toMap();
         if (entry.value(QStringLiteral("status")).toString() == QStringLiteral("complete"))

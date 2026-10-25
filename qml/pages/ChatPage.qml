@@ -35,6 +35,14 @@ Page {
                 textFormat: Text.PlainText
                 wrapMode: Text.Wrap
             }
+            Label {
+                width: parent.width
+                visible: modelData.status === "failed"
+                text: "Incomplete · not included in future requests"
+                color: Theme.secondaryColor
+                font.pixelSize: Theme.fontSizeExtraSmall
+                wrapMode: Text.Wrap
+            }
         }
         ViewPlaceholder {
             enabled: chat.messages.length === 0 && !chat.busy

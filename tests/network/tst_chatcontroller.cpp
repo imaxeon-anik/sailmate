@@ -152,6 +152,18 @@ private slots:
         QVERIFY(!controller.error().contains(QStringLiteral("secret")));
         QVERIFY(!controller.busy());
     }
+    void connectionFailureIsNotAuthenticationFailure()
+    {
+        ChatController controller;
+        QSignalSpy validated(&controller, SIGNAL(keyValidated(QString,QString)));
+        FakeReply *reply = new FakeReply(QByteArray(), 0, "application/json", &controller);
+        controller.attachReply(reply, ChatController::ValidateModels);
+        reply->complete();
+        QCOMPARE(validated.count(), 0);
+        QVERIFY(controller.error().contains(QStringLiteral("connection")));
+        QVERIFY(!controller.error().contains(QStringLiteral("HTTP 0")));
+        QVERIFY(!controller.busy());
+    }
     void cancellationKeepsPartialUncommitted()
     {
         ChatController controller;

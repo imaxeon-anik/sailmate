@@ -66,7 +66,6 @@ Page {
                             var dialog = pageStack.push(Qt.resolvedUrl("RemoveKeyDialog.qml"), { providerTitle: modelData.title })
                             var provider = modelData.providerId
                             dialog.accepted.connect(function() {
-                                chat.forgetProvider(provider)
                                 vault.removeKey(provider)
                             })
                         }
@@ -95,6 +94,7 @@ Page {
     }
     Connections {
         target: vault
+        onKeyRemoved: chat.forgetProvider(provider)
         onKeyLoaded: {
             if (page.pendingProvider === provider) {
                 page.pendingProvider = ""

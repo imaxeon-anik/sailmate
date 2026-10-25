@@ -1,8 +1,9 @@
 TEMPLATE = app
 TARGET = harbour-sailmate
-CONFIG += sailfishapp c++11 link_pkgconfig
+CONFIG += c++11 link_pkgconfig
 QT += core gui qml quick network sql
-PKGCONFIG += sailfishsecrets
+PKGCONFIG += sailfishapp sailfishsecrets
+target.path = /usr/bin
 SOURCES += src/main.cpp src/chatcontroller.cpp src/credentialstore.cpp
 HEADERS += src/chatcontroller.h src/credentialstore.h
 
@@ -14,4 +15,4 @@ desktop.files = rpm/harbour-sailmate.desktop
 desktop.path = /usr/share/applications
 icon.files = rpm/harbour-sailmate.svg
 icon.path = /usr/share/icons/hicolor/scalable/apps
-INSTALLS += qml desktop icon
+INSTALLS += target qml desktop icon

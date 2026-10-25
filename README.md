@@ -22,6 +22,12 @@ its retention policies. No analytics, tool execution, third-party gateway or aut
 Responses currently display as plain text, not rendered Markdown. File attachments, MCP,
 agent tools, history deletion/export and token-cost reporting are not implemented.
 
+## Screen previews
+
+Open [screen previews](docs/sailmate-preview.html) in a browser for six illustrative UI
+mockups, including centred pulley-menu labels. These are not screenshots of the running
+Sailfish app; native styling and interactions still require device validation.
+
 ## SSD development
 
 Source: `/Volumes/ANIKT9-VMs/sailfish-dev/src/sailmate`.

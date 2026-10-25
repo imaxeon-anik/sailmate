@@ -1,0 +1,25 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Sailmate: start build VM",
+      "type": "shell",
+      "command": "/Volumes/ANIKT9-VMs/sailfish-dev/vm-start.sh",
+      "problemMatcher": []
+    },
+    {
+      "label": "Sailmate: build Xperia RPM (aarch64)",
+      "type": "shell",
+      "command": "bash",
+      "args": ["${workspaceFolder}/scripts/build-rpm.sh", "aarch64"],
+      "group": { "kind": "build", "isDefault": true },
+      "problemMatcher": ["$gcc"]
+    },
+    {
+      "label": "Sailmate: stop build VM",
+      "type": "shell",
+      "command": "/Volumes/ANIKT9-VMs/sailfish-dev/vm-stop.sh",
+      "problemMatcher": []
+    }
+  ]
+}

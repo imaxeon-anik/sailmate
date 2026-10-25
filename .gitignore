@@ -1,0 +1,10 @@
+*.o
+moc_*
+qrc_*
+Makefile
+.qmake.stash
+RPMS/
+build/
+harbour-sailmate
+*.user
+.DS_Store

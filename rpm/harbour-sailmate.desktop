@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Sailmate
+Icon=harbour-sailmate
+Exec=harbour-sailmate
+Comment=Your AI companion for Sailfish OS
+X-Nemo-Application-Type=silica-qt5
+
+[X-Sailjail]
+OrganizationName=io.github.imaxeon-anik
+ApplicationName=Sailmate
+Permissions=Internet

@@ -15,12 +15,13 @@ ApplicationWindow {
         }
     }
     Component { id: providerPage; ProviderPage {} }
+    Component { id: historyPage; HistoryPage {} }
     Component { id: chatPage; ChatPage {} }
 
     function showProviders() {
         pageStack.replaceAbove(null, providerPage)
     }
     function showChat() {
-        pageStack.replaceAbove(null, chatPage)
+        pageStack.replaceAbove(null, [historyPage, chatPage])
     }
 }

@@ -4,6 +4,7 @@ import Sailfish.Silica 1.0
 Page {
     id: page
     allowedOrientations: Orientation.All
+    backNavigation: !chat.busy
     SilicaListView {
         id: messages
         anchors { top: parent.top; left: parent.left; right: parent.right; bottom: composer.top }
@@ -17,7 +18,6 @@ Page {
         PullDownMenu {
             MenuItem { text: "Change provider"; enabled: !chat.busy; onClicked: app.showProviders() }
             MenuItem { text: "Change model"; enabled: !chat.busy && chat.models.length > 0; onClicked: pageStack.push(Qt.resolvedUrl("ModelPage.qml")) }
-            MenuItem { text: "Previous chats"; enabled: !chat.busy; onClicked: pageStack.push(Qt.resolvedUrl("HistoryPage.qml")) }
             MenuItem { text: "Start new chat"; enabled: !chat.busy; onClicked: chat.newChat() }
         }
         delegate: Column {

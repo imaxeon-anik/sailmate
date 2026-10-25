@@ -9,7 +9,11 @@ not yet validated on a phone or with live provider credentials.
 - Device-lock-protected, owner-only credentials through Sailfish Secrets; no plaintext fallback.
   Only provider names are indexed in QSettings. Configure a device lock on the phone.
 - Streaming text chat, cancel/retry, provider model lists and local SQLite conversation history.
-- Pulley actions for new chat, models, previous chats and provider switching.
+- Chat history is the parent page: native back navigation from a conversation returns there.
+  Connecting opens a fresh conversation with history beneath it. History entries push conversations.
+- Conversation pulley actions: new chat, change model and change provider. History offers
+  new chat and change provider. Back navigation is disabled while a request is active; cancel
+  or wait before leaving so a streaming response is not orphaned.
 - Provider changes start a fresh chat. History can only be opened under its original provider.
 - Removing a key keeps history and does not revoke the provider-side key.
 

@@ -73,7 +73,8 @@ Page {
                 anchors.right: sendButton.left
                 height: Math.min(implicitHeight, page.height * 0.3)
                 placeholderText: "Message"
-                label: "Message"
+                labelVisible: false
+                Accessible.name: "Message"
                 enabled: !chat.busy
             }
             IconButton {

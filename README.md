@@ -11,6 +11,8 @@ not yet validated on a phone or with live provider credentials.
 - Streaming text chat, cancel/retry, provider model lists and local SQLite conversation history.
 - Chat history is the parent page: native back navigation from a conversation returns there.
   Connecting opens a fresh conversation with history beneath it. History entries push conversations.
+- The composer uses a native themed send icon beside the message field, changing to cancel
+  while a request runs. Empty messages cannot be sent; Retry appears separately after errors.
 - Conversation pulley actions: new chat, change model and change provider. History offers
   new chat and change provider. Back navigation is disabled while a request is active; cancel
   or wait before leaving so a streaming response is not orphaned.

@@ -64,19 +64,27 @@ Page {
             wrapMode: Text.Wrap
             font.pixelSize: Theme.fontSizeSmall
         }
-        TextArea {
-            id: input
+        Item {
             width: parent.width
-            height: Math.min(implicitHeight, page.height * 0.3)
-            placeholderText: "Message"
-            label: "Message"
-            enabled: !chat.busy
-        }
-        Row {
-            anchors.horizontalCenter: parent.horizontalCenter
-            spacing: Theme.paddingMedium
-            Button {
-                text: chat.busy ? "Cancel" : "Send"
+            height: Math.max(input.height, sendButton.height)
+            TextArea {
+                id: input
+                anchors.left: parent.left
+                anchors.right: sendButton.left
+                height: Math.min(implicitHeight, page.height * 0.3)
+                placeholderText: "Message"
+                label: "Message"
+                enabled: !chat.busy
+            }
+            IconButton {
+                id: sendButton
+                anchors.right: parent.right
+                anchors.rightMargin: Theme.horizontalPageMargin
+                anchors.bottom: parent.bottom
+                width: Theme.itemSizeSmall
+                height: Theme.itemSizeSmall
+                icon.source: chat.busy ? "image://theme/icon-m-cancel" : "image://theme/icon-m-send"
+                Accessible.name: chat.busy ? "Cancel response" : "Send message"
                 enabled: chat.busy || (input.text.trim().length > 0 && chat.model.length > 0)
                 onClicked: {
                     if (chat.busy) chat.cancel()
@@ -88,11 +96,12 @@ Page {
                     }
                 }
             }
-            Button {
-                text: "Retry"
-                visible: chat.error.length > 0 && !chat.busy
-                onClicked: chat.retry()
-            }
+        }
+        Button {
+            anchors.horizontalCenter: parent.horizontalCenter
+            text: "Retry"
+            visible: chat.error.length > 0 && !chat.busy
+            onClicked: chat.retry()
         }
         Item { width: 1; height: Theme.paddingMedium }
     }

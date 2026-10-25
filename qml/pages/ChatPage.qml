@@ -4,21 +4,50 @@ import Sailfish.Silica 1.0
 Page {
     id: page
     allowedOrientations: Orientation.All
-    backNavigation: !chat.busy
+    backNavigation: !chat.busy && !vault.busy
     SilicaListView {
         id: messages
         anchors { top: parent.top; left: parent.left; right: parent.right; bottom: composer.top }
         clip: true
         model: chat.messages
         spacing: Theme.paddingMedium
-        header: PageHeader {
-            title: "Sailmate · " + (chat.provider === "openai" ? "OpenAI" : "Claude")
-            description: chat.model || "Loading models…"
+        header: Column {
+            width: messages.width
+            spacing: Theme.paddingSmall
+            PageHeader { title: "Sailmate" }
+            Label {
+                x: Theme.horizontalPageMargin
+                width: parent.width - 2 * x
+                text: chat.providerTitle
+                textFormat: Text.PlainText
+                wrapMode: Text.Wrap
+                color: Theme.highlightColor
+            }
+            Label {
+                x: Theme.horizontalPageMargin
+                width: parent.width - 2 * x
+                text: chat.model || "Loading models…"
+                textFormat: Text.PlainText
+                wrapMode: Text.Wrap
+                font.pixelSize: Theme.fontSizeSmall
+                color: Theme.secondaryColor
+            }
+            Label {
+                x: Theme.horizontalPageMargin
+                width: parent.width - 2 * x
+                text: chat.providerEndpoint
+                textFormat: Text.PlainText
+                visible: text.length > 0
+                wrapMode: Text.WrapAnywhere
+                font.pixelSize: Theme.fontSizeSmall
+                color: Theme.secondaryColor
+            }
+            Item { width: 1; height: Theme.paddingMedium }
         }
         PullDownMenu {
-            MenuItem { text: "Change provider"; enabled: !chat.busy; onClicked: app.showProviders() }
-            MenuItem { text: "Change model"; enabled: !chat.busy && chat.models.length > 0; onClicked: pageStack.push(Qt.resolvedUrl("ModelPage.qml")) }
-            MenuItem { text: "Start new chat"; enabled: !chat.busy; onClicked: chat.newChat() }
+            MenuItem { text: "Change provider"; enabled: !chat.busy && !vault.busy; onClicked: app.showProviders() }
+            MenuItem { text: "Change model"; enabled: !chat.busy && !vault.busy && chat.models.length > 0; onClicked: pageStack.push(Qt.resolvedUrl("ModelPage.qml")) }
+            MenuItem { text: "Start new chat"; enabled: !chat.busy && !vault.busy; onClicked: chat.newChat() }
         }
         delegate: Item {
             id: messageRow
@@ -68,10 +97,32 @@ Page {
                 }
             }
         }
-        ViewPlaceholder {
-            enabled: chat.messages.length === 0 && !chat.busy
-            text: "Start a conversation"
-            hintText: "Your messages will be sent to " + (chat.provider === "openai" ? "OpenAI" : "Anthropic") + ". API charges may apply."
+        footer: Column {
+            width: messages.width
+            height: visible ? implicitHeight : 0
+            visible: chat.messages.length === 0 && !chat.busy
+            spacing: Theme.paddingLarge
+            Item { width: 1; height: Theme.paddingLarge }
+            Label {
+                x: Theme.horizontalPageMargin
+                width: parent.width - 2 * x
+                text: "Start a conversation"
+                horizontalAlignment: Text.AlignHCenter
+                wrapMode: Text.Wrap
+                font.pixelSize: Theme.fontSizeLarge
+                color: Theme.highlightColor
+            }
+            Label {
+                x: Theme.horizontalPageMargin
+                width: parent.width - 2 * x
+                text: "Your messages will be sent to " + chat.providerTitle
+                      + (chat.providerEndpoint ? " at " + chat.providerEndpoint : "") + ". API charges may apply."
+                textFormat: Text.PlainText
+                horizontalAlignment: Text.AlignHCenter
+                wrapMode: Text.Wrap
+                font.pixelSize: Theme.fontSizeSmall
+                color: Theme.secondaryColor
+            }
         }
         VerticalScrollDecorator {}
     }
@@ -84,6 +135,7 @@ Page {
             width: parent.width - 2 * x
             visible: chat.error.length > 0
             text: chat.error
+            textFormat: Text.PlainText
             color: Theme.highlightColor
             wrapMode: Text.Wrap
             font.pixelSize: Theme.fontSizeSmall
@@ -99,7 +151,7 @@ Page {
                 placeholderText: "Message"
                 labelVisible: false
                 Accessible.name: "Message"
-                enabled: !chat.busy
+                enabled: !chat.busy && !vault.busy
             }
             IconButton {
                 id: sendButton
@@ -110,8 +162,9 @@ Page {
                 height: Theme.itemSizeSmall
                 icon.source: chat.busy ? "image://theme/icon-m-cancel" : "image://theme/icon-m-send"
                 Accessible.name: chat.busy ? "Cancel response" : "Send message"
-                enabled: chat.busy || (input.text.trim().length > 0 && chat.model.length > 0)
+                enabled: !vault.busy && (chat.busy || (input.text.trim().length > 0 && chat.model.length > 0))
                 onClicked: {
+                    if (vault.busy) return
                     if (chat.busy) chat.cancel()
                     else {
                         var message = input.text
@@ -126,6 +179,7 @@ Page {
             anchors.horizontalCenter: parent.horizontalCenter
             text: "Retry"
             visible: chat.error.length > 0 && !chat.busy
+            enabled: !chat.busy && !vault.busy
             onClicked: chat.retry()
         }
         Item { width: 1; height: Theme.paddingMedium }

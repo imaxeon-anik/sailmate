@@ -20,6 +20,6 @@ int main(int argc, char *argv[])
     view->setSource(QUrl(QStringLiteral("file:///usr/share/harbour-sailmate/qml/sailmate.qml")));
     if (view->status() == QQuickView::Error)
         return 1;
-    view->show();
+    view->showFullScreen();
     return app->exec();
 }

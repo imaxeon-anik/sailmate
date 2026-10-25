@@ -1,4 +1,6 @@
 #include "chatcontroller.h"
+#include "providerprofile.h"
+#include <QSettings>
 
 #include <QDateTime>
 #include <QDir>
@@ -34,9 +36,17 @@ QVariantMap message(const QString &role, const QString &content, const QString &
     return result;
 }
 
-bool supportedProvider(const QString &provider)
+QString normalizedBaseUrl(const QString &value)
 {
-    return provider == QStringLiteral("openai") || provider == QStringLiteral("anthropic");
+    const QUrl url(value.trimmed(), QUrl::StrictMode);
+    if (!url.isValid() || url.scheme() != QLatin1String("https") || url.host().isEmpty()
+            || !url.userInfo().isEmpty() || url.hasQuery() || url.hasFragment()
+            || value.size() > 2048)
+        return QString();
+    QString result = url.toString(QUrl::FullyEncoded);
+    while (result.endsWith(QLatin1Char('/')))
+        result.chop(1);
+    return result;
 }
 
 bool chatModel(const QString &id)
@@ -84,6 +94,18 @@ ChatController::ChatController(QObject *parent)
       m_sawDone(false), m_sawFinish(false), m_messageStarted(false),
       m_messageDelta(false), m_assistantIndex(-1), m_receivedBytes(0)
 {
+    const QVariantList stored = QSettings().value(QStringLiteral("providers/custom")).toList();
+    for (const QVariant &value : stored) {
+        const QVariantMap profile = value.toMap();
+        const QString id = profile.value(QStringLiteral("id")).toString();
+        const QString name = profile.value(QStringLiteral("name")).toString();
+        const QString url = profile.value(QStringLiteral("baseUrl")).toString();
+        const QString model = profile.value(QStringLiteral("model")).toString();
+        if (isCustomProviderId(id) && customProfile(id).isEmpty() && !name.trimmed().isEmpty()
+                && name.size() <= 80 && !url.isEmpty() && normalizedBaseUrl(url) == url
+                && (model.isEmpty() || chatModel(model)))
+            m_customProfiles.append(profile);
+    }
     m_timeout.setSingleShot(true);
     connect(&m_timeout, &QTimer::timeout, this, [this]() {
         stopRequest(tr("The request timed out. You can retry manually."));
@@ -98,6 +120,94 @@ ChatController::~ChatController()
         m_database = QSqlDatabase();
         QSqlDatabase::removeDatabase(m_databaseConnection);
     }
+}
+
+QVariantMap ChatController::customProfile(const QString &provider) const
+{
+    for (const QVariant &value : m_customProfiles) {
+        if (value.toMap().value(QStringLiteral("id")).toString() == provider)
+            return value.toMap();
+    }
+    return QVariantMap();
+}
+
+bool ChatController::supportedProvider(const QString &provider) const
+{
+    return provider == QLatin1String("openai") || provider == QLatin1String("anthropic")
+            || !customProfile(provider).isEmpty();
+}
+
+QString ChatController::providerTitle() const
+{
+    if (m_provider == QLatin1String("openai"))
+        return QStringLiteral("OpenAI");
+    if (m_provider == QLatin1String("anthropic"))
+        return QStringLiteral("Anthropic");
+    return customProfile(m_provider).value(QStringLiteral("name")).toString();
+}
+
+QString ChatController::providerEndpoint() const
+{
+    return customProfile(m_provider).value(QStringLiteral("baseUrl")).toString();
+}
+
+QString ChatController::createCustomProfile(QString name, QString baseUrl, QString model)
+{
+    if (!idle())
+        return QString();
+    name = name.trimmed();
+    model = model.trimmed();
+    const QString url = normalizedBaseUrl(baseUrl);
+    if (name.isEmpty() || name.size() > 80 || url.isEmpty() || (!model.isEmpty() && !chatModel(model))) {
+        setError(tr("Enter a name (up to 80 characters), an HTTPS base URL without credentials, query or fragment, and an optional model ID."));
+        return QString();
+    }
+    for (const QVariant &value : m_customProfiles) {
+        if (value.toMap().value(QStringLiteral("name")).toString().compare(name, Qt::CaseInsensitive) == 0) {
+            setError(tr("Choose a different profile name."));
+            return QString();
+        }
+    }
+    QString id = QUuid::createUuid().toString();
+    id.remove(QLatin1Char('{')).remove(QLatin1Char('}')).remove(QLatin1Char('-'));
+    id.prepend(QStringLiteral("custom-"));
+    QVariantMap profile;
+    profile.insert(QStringLiteral("id"), id);
+    profile.insert(QStringLiteral("name"), name);
+    profile.insert(QStringLiteral("baseUrl"), url);
+    profile.insert(QStringLiteral("model"), model);
+    QVariantList profiles = m_customProfiles;
+    profiles.append(profile);
+    QSettings settings;
+    settings.setValue(QStringLiteral("providers/custom"), profiles);
+    settings.sync();
+    if (settings.status() != QSettings::NoError) {
+        setError(tr("Could not save the custom profile."));
+        return QString();
+    }
+    m_customProfiles = profiles;
+    clearError();
+    emit customProfilesChanged();
+    return id;
+}
+
+QNetworkRequest ChatController::apiRequest(const QString &provider, const QString &key, bool chat) const
+{
+    const bool anthropic = provider == QLatin1String("anthropic");
+    QString base = customProfile(provider).value(QStringLiteral("baseUrl")).toString();
+    if (base.isEmpty())
+        base = anthropic ? QStringLiteral("https://api.anthropic.com/v1") : QStringLiteral("https://api.openai.com/v1");
+    const QString path = !chat ? QStringLiteral("/models") : anthropic
+            ? QStringLiteral("/messages") : QStringLiteral("/chat/completions");
+    QNetworkRequest request(QUrl(base + path));
+    request.setRawHeader("Accept", chat ? "text/event-stream" : "application/json");
+    if (anthropic) {
+        request.setRawHeader("x-api-key", key.toLatin1());
+        request.setRawHeader("anthropic-version", "2023-06-01");
+    } else {
+        request.setRawHeader("Authorization", "Bearer " + key.toLatin1());
+    }
+    return request;
 }
 
 void ChatController::setError(const QString &error)
@@ -176,17 +286,23 @@ void ChatController::fetchModels(Operation operation, const QString &provider, c
     clearError();
     m_requestProvider = provider;
     m_requestKey = key;
-    QNetworkRequest request(QUrl(provider == QStringLiteral("openai")
-                                 ? QStringLiteral("https://api.openai.com/v1/models")
-                                 : QStringLiteral("https://api.anthropic.com/v1/models")));
-    request.setRawHeader("Accept", "application/json");
-    if (provider == QStringLiteral("openai")) {
-        request.setRawHeader("Authorization", "Bearer " + key.toLatin1());
-    } else {
-        request.setRawHeader("x-api-key", key.toLatin1());
-        request.setRawHeader("anthropic-version", "2023-06-01");
+    const QString manualModel = customProfile(provider).value(QStringLiteral("model")).toString();
+    if (!manualModel.isEmpty()) {
+        m_requestProvider.clear();
+        m_requestKey.clear();
+        if (operation == LoadModels) {
+            m_models = QStringList() << manualModel;
+            m_model = manualModel;
+            emit modelsChanged();
+            emit modelChanged();
+        }
+        // A manually configured model skips discovery, not a successful authentication check.
+        if (operation == ValidateModels)
+            emit keyValidated(provider, key);
+        emit requestFinished(true);
+        return;
     }
-    attachReply(m_network.get(request), operation);
+    attachReply(m_network.get(apiRequest(provider, key, false)), operation);
 }
 
 void ChatController::attachReply(QNetworkReply *reply, Operation operation)
@@ -245,7 +361,8 @@ QStringList ChatController::parseModels(const QByteArray &body) const
         if (!entry.isObject())
             continue;
         const QString id = entry.toObject().value(QStringLiteral("id")).toString();
-        if (m_requestProvider == QStringLiteral("openai") ? openAIChatModel(id)
+        if (isCustomProviderId(m_requestProvider) ? chatModel(id)
+                : m_requestProvider == QStringLiteral("openai") ? openAIChatModel(id)
                 : (chatModel(id) && id.startsWith(QStringLiteral("claude-"))))
             result.append(id);
     }
@@ -494,17 +611,8 @@ bool ChatController::startChat(const QString &text, bool retrying)
     body.insert(QStringLiteral("stream"), true);
     body.insert(m_provider == QStringLiteral("openai") ? QStringLiteral("max_completion_tokens")
                                                         : QStringLiteral("max_tokens"), 2048);
-    QNetworkRequest request(QUrl(m_provider == QStringLiteral("openai")
-                                 ? QStringLiteral("https://api.openai.com/v1/chat/completions")
-                                 : QStringLiteral("https://api.anthropic.com/v1/messages")));
+    QNetworkRequest request = apiRequest(m_provider, m_key, true);
     request.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
-    request.setRawHeader("Accept", "text/event-stream");
-    if (m_provider == QStringLiteral("openai")) {
-        request.setRawHeader("Authorization", "Bearer " + m_key.toLatin1());
-    } else {
-        request.setRawHeader("x-api-key", m_key.toLatin1());
-        request.setRawHeader("anthropic-version", "2023-06-01");
-    }
     m_messages = complete;
     m_messages.append(message(QStringLiteral("user"), text, QStringLiteral("pending")));
     m_messages.append(message(QStringLiteral("assistant"), QString(), QStringLiteral("streaming")));
@@ -618,7 +726,7 @@ void ChatController::dispatchEvent()
         streamError(tr("The provider reported a streaming error. Check access, quota and billing."));
         return;
     }
-    if (m_provider == QStringLiteral("openai") && data == "[DONE]") {
+    if (m_provider != QStringLiteral("anthropic") && data == "[DONE]") {
         if (!m_sawFinish)
             streamError(invalid);
         m_sawDone = true;
@@ -640,7 +748,7 @@ void ChatController::dispatchEvent()
         streamError(tr("The provider reported a streaming error. Check access, quota and billing."));
         return;
     }
-    if (m_provider == QStringLiteral("openai")) {
+    if (m_provider != QStringLiteral("anthropic")) {
         const QJsonValue choicesValue = object.value(QStringLiteral("choices"));
         if (!choicesValue.isArray()) {
             streamError(invalid);

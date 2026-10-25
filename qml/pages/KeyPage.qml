@@ -5,7 +5,17 @@ Page {
     id: page
     property string providerId
     property string providerTitle
+    property string baseUrl: ""
+    property string manualModel: ""
     property bool saving: false
+    property bool loading: false
+
+    function submitKey() {
+        if (chat.busy || vault.busy || !keyField.text.trim()) return
+        chat.clearError()
+        keyField.focus = false
+        chat.validateKey(providerId, keyField.text.trim())
+    }
     backNavigation: !chat.busy && !vault.busy
     allowedOrientations: Orientation.All
     SilicaFlickable {
@@ -15,14 +25,53 @@ Page {
             id: column
             width: parent.width
             spacing: Theme.paddingLarge
-            PageHeader { title: "Connect " + providerTitle }
+            PageHeader { title: manualModel ? "Save API key" : "Connect provider" }
             Label {
                 x: Theme.horizontalPageMargin
                 width: parent.width - 2 * x
-                text: "Enter your API key. It will be stored using Sailfish Secrets, not in your chat history. Validation checks access to the model list; chat availability also depends on billing and model permissions."
+                text: page.providerTitle
+                textFormat: Text.PlainText
+                wrapMode: Text.Wrap
+                font.pixelSize: Theme.fontSizeLarge
+            }
+            Label {
+                x: Theme.horizontalPageMargin
+                width: parent.width - 2 * x
+                text: page.baseUrl
+                textFormat: Text.PlainText
+                visible: text.length > 0
+                wrapMode: Text.WrapAnywhere
+                color: Theme.highlightColor
+                font.pixelSize: Theme.fontSizeSmall
+            }
+            Label {
+                x: Theme.horizontalPageMargin
+                width: parent.width - 2 * x
+                text: "Manual model: " + page.manualModel
+                textFormat: Text.PlainText
+                visible: page.manualModel.length > 0
+                wrapMode: Text.Wrap
+                color: Theme.secondaryColor
+                font.pixelSize: Theme.fontSizeSmall
+            }
+            Label {
+                x: Theme.horizontalPageMargin
+                width: parent.width - 2 * x
+                text: page.manualModel
+                      ? "Enter your API key. Save and continue stores it using Sailfish Secrets without validation. The manual model skips /models: authentication, billing and model access are not verified until you send a chat request."
+                      : "Enter your API key. It will be stored using Sailfish Secrets, not in your chat history. Validation checks access to the model list; chat availability also depends on billing and model permissions."
                 wrapMode: Text.Wrap
                 font.pixelSize: Theme.fontSizeSmall
                 color: Theme.secondaryColor
+            }
+            Label {
+                x: Theme.horizontalPageMargin
+                width: parent.width - 2 * x
+                visible: page.baseUrl.length > 0
+                text: "Your key and conversation will be sent to this URL. Check the endpoint and your organisation's permission before continuing. To change it, create a separate profile; keys and history are not reused."
+                wrapMode: Text.Wrap
+                color: Theme.secondaryColor
+                font.pixelSize: Theme.fontSizeSmall
             }
             PasswordField {
                 id: keyField
@@ -31,16 +80,21 @@ Page {
                 placeholderText: "Paste API key"
                 enabled: !chat.busy && !vault.busy
                 inputMethodHints: Qt.ImhNoPredictiveText | Qt.ImhSensitiveData | Qt.ImhNoAutoUppercase
+                EnterKey.iconSource: "image://theme/icon-m-enter-accept"
+                EnterKey.onClicked: page.submitKey()
             }
             Button {
                 anchors.horizontalCenter: parent.horizontalCenter
-                text: "Connect"
+                text: page.manualModel ? "Save and continue" : "Connect"
                 enabled: keyField.text.trim().length > 0 && !chat.busy && !vault.busy
-                onClicked: {
-                    chat.clearError()
-                    keyField.focus = false
-                    chat.validateKey(providerId, keyField.text.trim())
-                }
+                onClicked: page.submitKey()
+            }
+            Button {
+                anchors.horizontalCenter: parent.horizontalCenter
+                text: "Cancel validation"
+                visible: chat.busy && !vault.busy
+                enabled: chat.busy && !vault.busy
+                onClicked: chat.cancel()
             }
             BusyIndicator {
                 anchors.horizontalCenter: parent.horizontalCenter
@@ -52,6 +106,7 @@ Page {
                 x: Theme.horizontalPageMargin
                 width: parent.width - 2 * x
                 text: chat.error || vault.error
+                textFormat: Text.PlainText
                 visible: text.length > 0
                 wrapMode: Text.Wrap
                 color: Theme.highlightColor
@@ -62,7 +117,7 @@ Page {
     Connections {
         target: chat
         onKeyValidated: {
-            if (provider === page.providerId) {
+            if (page.status === PageStatus.Active && provider === page.providerId && !vault.busy) {
                 page.saving = true
                 vault.saveKey(provider, key)
             }
@@ -74,13 +129,15 @@ Page {
             if (provider === page.providerId && page.saving) {
                 page.saving = false
                 keyField.text = ""
+                page.loading = true
                 vault.loadKey(provider)
             }
         }
         onKeyLoaded: {
-            if (provider === page.providerId) {
+            if (page.status === PageStatus.Active && page.loading && provider === page.providerId && !chat.busy) {
+                page.loading = false
                 chat.activateProvider(provider, key)
-                app.showChat()
+                if (chat.provider === provider && chat.error.length === 0) app.showChat()
             }
         }
     }

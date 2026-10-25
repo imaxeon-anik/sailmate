@@ -1,4 +1,5 @@
 #include "credentialstore.h"
+#include "providerprofile.h"
 #include <QSettings>
 #include <Sailfish/Secrets/storesecretrequest.h>
 #include <Sailfish/Secrets/storedsecretrequest.h>
@@ -19,8 +20,7 @@ CredentialStore::CredentialStore(QObject *parent)
 {
     const QStringList known = QSettings().value(QStringLiteral("credentials/providers")).toStringList();
     for (const QString &provider : known) {
-        if ((provider == QLatin1String("openai") || provider == QLatin1String("anthropic"))
-                && !m_saved.contains(provider))
+        if (isProviderId(provider) && !m_saved.contains(provider))
             m_saved.append(provider);
     }
 }
@@ -29,7 +29,7 @@ bool CredentialStore::begin(const QString &provider)
 {
     if (m_busy)
         return false;
-    if (provider != QLatin1String("openai") && provider != QLatin1String("anthropic")) {
+    if (!isProviderId(provider)) {
         finish(tr("Unknown provider."));
         return false;
     }

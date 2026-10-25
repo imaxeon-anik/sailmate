@@ -18,6 +18,9 @@ class ChatController : public QObject
 {
     Q_OBJECT
     Q_PROPERTY(QString provider READ provider NOTIFY providerChanged)
+    Q_PROPERTY(QString providerTitle READ providerTitle NOTIFY providerChanged)
+    Q_PROPERTY(QString providerEndpoint READ providerEndpoint NOTIFY providerChanged)
+    Q_PROPERTY(QVariantList customProfiles READ customProfiles NOTIFY customProfilesChanged)
     Q_PROPERTY(QString model READ model NOTIFY modelChanged)
     Q_PROPERTY(QStringList models READ models NOTIFY modelsChanged)
     Q_PROPERTY(QVariantList messages READ messages NOTIFY messagesChanged)
@@ -36,6 +39,10 @@ public:
     bool busy() const { return m_busy; }
     QString error() const { return m_error; }
 
+    QString providerTitle() const;
+    QString providerEndpoint() const;
+    QVariantList customProfiles() const { return m_customProfiles; }
+    Q_INVOKABLE QString createCustomProfile(QString name, QString baseUrl, QString model);
     Q_INVOKABLE void validateKey(QString provider, QString key);
     Q_INVOKABLE void activateProvider(QString provider, QString key);
     Q_INVOKABLE void setModel(QString model);
@@ -49,6 +56,7 @@ public:
 
 signals:
     void providerChanged();
+    void customProfilesChanged();
     void modelChanged();
     void modelsChanged();
     void messagesChanged();
@@ -62,6 +70,10 @@ private:
     friend class ChatControllerTest;
     enum Operation { Idle, ValidateModels, LoadModels, Chat };
     bool idle();
+    bool supportedProvider(const QString &provider) const;
+    QVariantMap customProfile(const QString &provider) const;
+    QNetworkRequest apiRequest(const QString &provider, const QString &key, bool chat) const;
+    QVariantList m_customProfiles;
     bool validCredentials(const QString &provider, const QString &key);
     void setError(const QString &error);
     void setBusy(bool busy);

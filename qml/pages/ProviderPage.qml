@@ -5,6 +5,7 @@ Page {
     id: page
     allowedOrientations: Orientation.All
     property string pendingProvider: ""
+    backNavigation: !chat.busy && !vault.busy
 
     SilicaFlickable {
         anchors.fill: parent
@@ -31,6 +32,8 @@ Page {
                     enabled: !vault.busy && !chat.busy
                     property bool saved: vault.savedProviders.indexOf(modelData.providerId) !== -1
                     onClicked: {
+                        if (vault.busy || chat.busy) return
+                        chat.clearError()
                         if (saved) {
                             page.pendingProvider = modelData.providerId
                             vault.loadKey(modelData.providerId)
@@ -62,21 +65,50 @@ Page {
                         anchors.verticalCenter: parent.verticalCenter
                         icon.source: "image://theme/icon-m-delete"
                         visible: providerItem.saved
+                        enabled: !vault.busy && !chat.busy
                         onClicked: {
+                            if (vault.busy || chat.busy) return
                             var dialog = pageStack.push(Qt.resolvedUrl("RemoveKeyDialog.qml"), { providerTitle: modelData.title })
                             var provider = modelData.providerId
                             dialog.accepted.connect(function() {
-                                vault.removeKey(provider)
+                                if (!vault.busy && !chat.busy) vault.removeKey(provider)
                             })
                         }
                     }
                 }
             }
-            BusyIndicator { anchors.horizontalCenter: parent.horizontalCenter; running: vault.busy; visible: running; size: BusyIndicatorSize.Medium }
+            BackgroundItem {
+                id: customItem
+                width: column.width
+                height: customInfo.height + 2 * Theme.paddingLarge
+                enabled: !vault.busy && !chat.busy
+                onClicked: {
+                    if (vault.busy || chat.busy) return
+                    chat.clearError()
+                    pageStack.push(Qt.resolvedUrl("CustomProvidersPage.qml"))
+                }
+                Column {
+                    id: customInfo
+                    x: Theme.horizontalPageMargin
+                    y: Theme.paddingLarge
+                    width: parent.width - 2 * x
+                    spacing: Theme.paddingSmall
+                    Label { text: "Custom"; color: customItem.highlighted ? Theme.highlightColor : Theme.primaryColor }
+                    Label {
+                        width: parent.width
+                        text: "Named OpenAI-compatible API profiles. Choose where your messages are sent."
+                        wrapMode: Text.Wrap
+                        font.pixelSize: Theme.fontSizeSmall
+                        color: Theme.secondaryColor
+                    }
+                }
+            }
+            BusyIndicator { anchors.horizontalCenter: parent.horizontalCenter; running: vault.busy || chat.busy; visible: running; size: BusyIndicatorSize.Medium }
             Label {
                 x: Theme.horizontalPageMargin
                 width: parent.width - 2 * x
-                text: vault.error
+                text: chat.error || vault.error
+                textFormat: Text.PlainText
                 visible: text.length > 0
                 wrapMode: Text.Wrap
                 color: Theme.highlightColor
@@ -94,12 +126,14 @@ Page {
     }
     Connections {
         target: vault
-        onKeyRemoved: chat.forgetProvider(provider)
+        onKeyRemoved: {
+            if (provider === "openai" || provider === "anthropic") chat.forgetProvider(provider)
+        }
         onKeyLoaded: {
-            if (page.pendingProvider === provider) {
+            if (page.status === PageStatus.Active && page.pendingProvider === provider && !chat.busy) {
                 page.pendingProvider = ""
                 chat.activateProvider(provider, key)
-                app.showChat()
+                if (chat.provider === provider && chat.error.length === 0) app.showChat()
             }
         }
     }

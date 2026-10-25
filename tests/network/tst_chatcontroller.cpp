@@ -3,6 +3,9 @@
 #include <QSignalSpy>
 #include <QSqlQuery>
 #include <QUuid>
+#include <QSettings>
+#include <QTemporaryDir>
+#include "providerprofile.h"
 #include "chatcontroller.h"
 
 class FakeReply : public QNetworkReply
@@ -65,7 +68,120 @@ private:
         value.insert(QStringLiteral("status"), status);
         return value;
     }
+    QTemporaryDir settingsDirectory;
 private slots:
+    void initTestCase()
+    {
+        QVERIFY(settingsDirectory.isValid());
+        QCoreApplication::setOrganizationName(QStringLiteral("SailmateTests"));
+        QSettings::setDefaultFormat(QSettings::IniFormat);
+        QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, settingsDirectory.path());
+    }
+    void init() { QSettings().clear(); }
+    void customProfilesAndRequests()
+    {
+        ChatController controller;
+        const QString id = controller.createCustomProfile("Work", "https://example.invalid/gateway/v1/", "");
+        QVERIFY(isCustomProviderId(id));
+        QVERIFY(isProviderId(id));
+        QVERIFY(!isProviderId("custom-../../key"));
+        const QString second = controller.createCustomProfile("Personal", "https://other.invalid/v1", "vendor/model");
+        QVERIFY(id != second);
+        QVERIFY(!second.isEmpty());
+        QVERIFY(controller.createCustomProfile("work", "https://example.invalid/v1", "").isEmpty());
+        ChatController restored;
+        QCOMPARE(restored.customProfiles().size(), 2);
+        QVERIFY(restored.supportedProvider(id));
+        QVERIFY(!restored.supportedProvider("custom-00000000000000000000000000000000"));
+        const QNetworkRequest models = restored.apiRequest(id, "fake-key", false);
+        QCOMPARE(models.url().toString(), QStringLiteral("https://example.invalid/gateway/v1/models"));
+        QCOMPARE(models.rawHeader("Authorization"), QByteArray("Bearer fake-key"));
+        QVERIFY(!models.hasRawHeader("x-api-key"));
+        const QNetworkRequest chat = restored.apiRequest(second, "other-key", true);
+        QCOMPARE(chat.url().toString(), QStringLiteral("https://other.invalid/v1/chat/completions"));
+        QCOMPARE(chat.rawHeader("Authorization"), QByteArray("Bearer other-key"));
+        QCOMPARE(restored.apiRequest("openai", "key", false).url().toString(), QStringLiteral("https://api.openai.com/v1/models"));
+        QCOMPARE(restored.apiRequest("anthropic", "key", true).rawHeader("x-api-key"), QByteArray("key"));
+        QVERIFY(!QSettings().value("providers/custom").toString().contains("fake-key"));
+        restored.m_requestProvider = id;
+        QCOMPARE(restored.parseModels("{\"data\":[{\"id\":\"vendor/model\"},{\"id\":\"custom-model\"}]}"),
+                 QStringList() << QStringLiteral("custom-model") << QStringLiteral("vendor/model"));
+        restored.m_provider = id;
+        restored.feedStream(openAIStream());
+        QVERIFY(restored.m_streamFailure.isEmpty());
+        QVERIFY(restored.m_sawDone);
+        QCOMPARE(restored.providerTitle(), QStringLiteral("Work"));
+        QCOMPARE(restored.providerEndpoint(), QStringLiteral("https://example.invalid/gateway/v1"));
+    }
+    void invalidCustomUrls_data()
+    {
+        QTest::addColumn<QString>("url");
+        QTest::newRow("http") << "http://example.invalid/v1";
+        QTest::newRow("credentials") << "https://user:password@example.invalid/v1";
+        QTest::newRow("query") << "https://example.invalid/v1?api-key=secret";
+        QTest::newRow("fragment") << "https://example.invalid/v1#secret";
+        QTest::newRow("relative") << "/v1";
+        QTest::newRow("hostless") << "https:///v1";
+        QTest::newRow("newline") << "https://example.invalid/\nheader";
+    }
+    void invalidCustomUrls()
+    {
+        QFETCH(QString, url);
+        ChatController controller;
+        QVERIFY(controller.createCustomProfile("Invalid", url, "").isEmpty());
+        QVERIFY(controller.customProfiles().isEmpty());
+        QVERIFY(!controller.busy());
+    }
+    void customManualModelAndIsolation()
+    {
+        ChatController controller;
+        database(controller);
+        const QString first = controller.createCustomProfile("First", "https://first.invalid/v1", "vendor/model");
+        const QString second = controller.createCustomProfile("Second", "https://second.invalid/v1", "another-model");
+        QSignalSpy validated(&controller, SIGNAL(keyValidated(QString,QString)));
+        controller.validateKey(first, "fake-key");
+        QCOMPARE(validated.count(), 1);
+        QVERIFY(!controller.m_reply);
+        controller.activateProvider(first, "fake-key");
+        QCOMPARE(controller.model(), QStringLiteral("vendor/model"));
+        QVERIFY(!controller.busy());
+        controller.m_messages << entry("user", "private", "complete") << entry("assistant", "answer", "complete");
+        QVERIFY(controller.saveConversation());
+        const QString conversation = controller.m_conversationId;
+        controller.activateProvider(second, "other-key");
+        QVERIFY(controller.messages().isEmpty());
+        QVERIFY(controller.conversations().isEmpty());
+        controller.openConversation(conversation);
+        QVERIFY(!controller.error().isEmpty());
+        QVERIFY(controller.messages().isEmpty());
+        controller.activateProvider(first, "fake-key");
+        controller.openConversation(conversation);
+        QCOMPARE(controller.messages().size(), 2);
+        controller.forgetProvider(first);
+        QVERIFY(controller.m_key.isEmpty());
+        QCOMPARE(controller.customProfiles().size(), 2);
+    }
+    void customDiscoveryFailures()
+    {
+        ChatController controller;
+        const QString id = controller.createCustomProfile("Work", "https://example.invalid/v1", "");
+        QSignalSpy validated(&controller, SIGNAL(keyValidated(QString,QString)));
+        const QList<int> statuses = QList<int>() << 401 << 403 << 404 << 302;
+        for (int status : statuses) {
+            controller.m_requestProvider = id;
+            controller.m_requestKey = "test-only";
+            FakeReply *reply = new FakeReply("do-not-display", status, "application/json", &controller);
+            controller.attachReply(reply, ChatController::ValidateModels);
+            reply->complete();
+            QCOMPARE(validated.count(), 0);
+            QVERIFY(!controller.busy());
+            QVERIFY(!controller.error().contains("do-not-display"));
+            QVERIFY(controller.m_requestKey.isEmpty());
+        }
+        controller.setBusy(true);
+        QVERIFY(controller.createCustomProfile("Busy", "https://busy.invalid", "").isEmpty());
+        QCOMPARE(controller.customProfiles().size(), 1);
+    }
     void openAISplitFrames()
     {
         const QByteArray stream = openAIStream();

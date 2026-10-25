@@ -1,6 +1,6 @@
 Name: harbour-sailmate
 Version: 0.1.0
-Release: 1
+Release: 3
 Summary: Native multi-provider AI chat for Sailfish OS
 License: LicenseRef-Proprietary
 URL: https://github.com/imaxeon-anik/sailmate
@@ -13,7 +13,7 @@ BuildRequires: pkgconfig(Qt5Quick)
 BuildRequires: pkgconfig(Qt5Network)
 BuildRequires: pkgconfig(Qt5Sql)
 Requires: sailfishsilica-qt5 >= 0.10.9
-Requires: qt5-plugin-sqlite
+Requires: qt5-plugin-sqldriver-sqlite
 
 %description
 Sailmate connects directly to OpenAI and Anthropic using your own API keys.

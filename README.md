@@ -9,6 +9,8 @@ not yet validated on a phone or with live provider credentials.
 - Device-lock-protected, owner-only credentials through Sailfish Secrets; no plaintext fallback.
   Only provider names are indexed in QSettings. Configure a device lock on the phone.
 - Streaming text chat, cancel/retry, provider model lists and local SQLite conversation history.
+- User messages appear in right-positioned, theme-tinted bubbles; AI replies stay on the left
+  with more width. Both keep left-aligned body text and visible speaker labels.
 - Chat history is the parent page: native back navigation from a conversation returns there.
   Connecting opens a fresh conversation with history beneath it. History entries push conversations.
 - The composer uses a native themed send icon beside the message field, changing to cancel

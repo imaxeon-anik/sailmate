@@ -20,28 +20,52 @@ Page {
             MenuItem { text: "Change model"; enabled: !chat.busy && chat.models.length > 0; onClicked: pageStack.push(Qt.resolvedUrl("ModelPage.qml")) }
             MenuItem { text: "Start new chat"; enabled: !chat.busy; onClicked: chat.newChat() }
         }
-        delegate: Column {
-            x: Theme.horizontalPageMargin
-            width: messages.width - 2 * x
-            spacing: Theme.paddingSmall
-            Label {
-                text: modelData.role === "user" ? "You" : "Sailmate"
-                color: Theme.highlightColor
-                font.pixelSize: Theme.fontSizeSmall
+        delegate: Item {
+            id: messageRow
+            property bool fromUser: modelData.role === "user"
+            width: messages.width
+            height: messageContent.height + 2 * Theme.paddingMedium
+
+            Rectangle {
+                id: bubble
+                x: messageRow.fromUser
+                   ? messageRow.width - width - Theme.horizontalPageMargin
+                   : Theme.horizontalPageMargin
+                width: (messageRow.width - 2 * Theme.horizontalPageMargin)
+                       * (messageRow.fromUser ? 0.82 : 1.0)
+                height: messageRow.height
+                radius: Theme.paddingSmall
+                color: Theme.highlightBackgroundColor
+                opacity: messageRow.fromUser ? 0.18 : 0
             }
-            Label {
-                width: parent.width
-                text: modelData.content
-                textFormat: Text.PlainText
-                wrapMode: Text.Wrap
-            }
-            Label {
-                width: parent.width
-                visible: modelData.status === "failed"
-                text: "Incomplete · not included in future requests"
-                color: Theme.secondaryColor
-                font.pixelSize: Theme.fontSizeExtraSmall
-                wrapMode: Text.Wrap
+            Column {
+                id: messageContent
+                x: bubble.x + Theme.paddingMedium
+                y: Theme.paddingMedium
+                width: bubble.width - 2 * Theme.paddingMedium
+                spacing: Theme.paddingSmall
+                Label {
+                    width: parent.width
+                    text: messageRow.fromUser ? "You" : "Sailmate"
+                    horizontalAlignment: messageRow.fromUser ? Text.AlignRight : Text.AlignLeft
+                    color: Theme.highlightColor
+                    font.pixelSize: Theme.fontSizeSmall
+                }
+                Label {
+                    width: parent.width
+                    text: modelData.content
+                    textFormat: Text.PlainText
+                    horizontalAlignment: Text.AlignLeft
+                    wrapMode: Text.Wrap
+                }
+                Label {
+                    width: parent.width
+                    visible: modelData.status === "failed"
+                    text: "Incomplete · not included in future requests"
+                    color: Theme.secondaryColor
+                    font.pixelSize: Theme.fontSizeExtraSmall
+                    wrapMode: Text.Wrap
+                }
             }
         }
         ViewPlaceholder {

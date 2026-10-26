@@ -25,7 +25,10 @@ class ChatController : public QObject
     Q_PROPERTY(QStringList models READ models NOTIFY modelsChanged)
     Q_PROPERTY(QVariantList messages READ messages NOTIFY messagesChanged)
     Q_PROPERTY(QVariantList conversations READ conversations NOTIFY conversationsChanged)
+    Q_PROPERTY(bool hasMoreConversations READ hasMoreConversations NOTIFY conversationsChanged)
     Q_PROPERTY(bool busy READ busy NOTIFY busyChanged)
+    Q_PROPERTY(bool unsaved READ unsaved NOTIFY unsavedChanged)
+    Q_PROPERTY(bool connected READ connected NOTIFY modelsChanged)
     Q_PROPERTY(QString error READ error NOTIFY errorChanged)
 public:
     explicit ChatController(QObject *parent = 0);
@@ -36,13 +39,22 @@ public:
     QStringList models() const { return m_models; }
     QVariantList messages() const { return m_messages; }
     QVariantList conversations() const { return m_conversations; }
+    bool hasMoreConversations() const { return m_hasMoreConversations; }
+    Q_INVOKABLE void loadMoreConversations();
     bool busy() const { return m_busy; }
+    bool unsaved() const { return m_unsaved; }
+    bool connected() const { return !m_key.isEmpty() && !m_models.isEmpty(); }
+    Q_INVOKABLE void retrySave();
+    Q_INVOKABLE void discardUnsavedConversation();
+    Q_INVOKABLE void connectProvider(QString key);
     QString error() const { return m_error; }
 
     QString providerTitle() const;
     QString providerEndpoint() const;
     QVariantList customProfiles() const { return m_customProfiles; }
     Q_INVOKABLE QString createCustomProfile(QString name, QString baseUrl, QString model);
+    Q_INVOKABLE void showProviderHistory(QString provider);
+    Q_INVOKABLE bool deleteCustomProfile(QString provider);
     Q_INVOKABLE void validateKey(QString provider, QString key);
     Q_INVOKABLE void activateProvider(QString provider, QString key);
     Q_INVOKABLE void setModel(QString model);
@@ -62,6 +74,7 @@ signals:
     void messagesChanged();
     void conversationsChanged();
     void busyChanged();
+    void unsavedChanged();
     void errorChanged();
     void keyValidated(QString provider, QString key);
     void requestFinished(bool success);
@@ -70,6 +83,8 @@ private:
     friend class ChatControllerTest;
     enum Operation { Idle, ValidateModels, LoadModels, Chat };
     bool idle();
+    bool canReplaceConversation();
+    bool m_unsaved = false;
     bool supportedProvider(const QString &provider) const;
     QVariantMap customProfile(const QString &provider) const;
     QNetworkRequest apiRequest(const QString &provider, const QString &key, bool chat) const;
@@ -108,6 +123,8 @@ private:
     QMap<QString, QString> m_previousModels;
     QVariantList m_messages;
     QVariantList m_conversations;
+    int m_historyLimit = 200;
+    bool m_hasMoreConversations = false;
     QString m_error;
     QString m_conversationId;
     QString m_title;

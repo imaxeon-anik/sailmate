@@ -10,6 +10,13 @@ Page {
     SilicaFlickable {
         anchors.fill: parent
         contentHeight: column.height
+        PullDownMenu {
+            MenuItem {
+                text: "Help"
+                enabled: !chat.busy && !vault.busy
+                onClicked: pageStack.push(Qt.resolvedUrl("HelpPage.qml"))
+            }
+        }
         Column {
             id: column
             width: parent.width
@@ -113,14 +120,6 @@ Page {
                 wrapMode: Text.Wrap
                 color: Theme.highlightColor
             }
-            Label {
-                x: Theme.horizontalPageMargin
-                width: parent.width - 2 * x
-                text: "Messages go directly to the selected provider. Switching providers starts a new chat; existing chats remain with their original provider."
-                wrapMode: Text.Wrap
-                color: Theme.secondaryColor
-                font.pixelSize: Theme.fontSizeSmall
-            }
         }
         VerticalScrollDecorator {}
     }
@@ -134,6 +133,15 @@ Page {
                 page.pendingProvider = ""
                 chat.activateProvider(provider, key)
                 if (chat.provider === provider && chat.error.length === 0) app.showChat()
+            }
+        }
+        onKeyMissing: {
+            if (page.status === PageStatus.Active && page.pendingProvider === provider) {
+                page.pendingProvider = ""
+                pageStack.push(Qt.resolvedUrl("KeyPage.qml"), {
+                    providerId: provider,
+                    providerTitle: provider === "openai" ? "OpenAI" : "Anthropic · Claude"
+                })
             }
         }
     }

@@ -9,7 +9,7 @@
 <section class="screen"><h2>01 / First launch · choose provider</h2><div class="phone"><div class="status"><span>00:47</span><span>▰</span></div><div class="header">Sailmate</div><div class="sub">Your AI companion</div><div class="heading">Choose your provider</div><div class="provider"><strong>OpenAI</strong><p class="muted">API key required. ChatGPT subscriptions do not include API usage.</p></div><div class="provider"><strong>Anthropic · Claude</strong><p class="muted">An Anthropic API key and API billing are required.</p></div><p class="muted note">Messages go directly to the selected provider. Switching providers starts a new chat; existing chats remain with their original provider.</p></div></section>
 <section class="screen"><h2>02 / Connect · masked API key</h2><div class="phone"><div class="status"><span>‹ &nbsp; 00:47</span><span>▰</span></div><div class="header">Connect OpenAI</div><p class="muted note">Enter your API key. It will be stored using Sailfish Secrets, not in your chat history. Validation checks access to the model list; chat availability also depends on billing and model permissions.</p><div class="input"><span class="mask">**************</span><label>API key</label></div><div class="button">Connect</div><p class="foot">Native password field supports revealing the key. Connection progress and errors appear below the button.</p></div></section>
 <section class="screen"><h2>03 / Chat · plain-text streaming</h2><div class="phone"><div class="status"><span>‹ &nbsp; 00:47</span><span>▰</span></div><div class="header">Sailmate · OpenAI</div><div class="sub">gpt-4.1-mini · example model</div><div class="user-message"><div class="role">You</div><div class="message">What can you help me with?</div></div><div class="role">Sailmate</div><div class="message">I can help answer questions, explain code, draft text and explore ideas.<br><br>What would you like to work on?</div><div class="composer"><div class="input">Message</div><div class="send-icon" aria-label="Send message"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M4 5L29 16 4 27l4-11zM8 16h21" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg></div></div></div></section>
-<section class="screen"><h2>04 / Chat · pulley menu expanded</h2><div class="phone"><div class="status"><span>‹ &nbsp; 00:47</span><span>▰</span></div><div class="menu"><div>Change provider</div><div>Change model</div><div>Start new chat</div></div><div class="header">Sailmate · OpenAI</div><div class="sub">gpt-4.1-mini · example model</div><div class="user-message"><div class="role">You</div><div class="message">What can you help me with?</div></div><div class="composer"><div class="input">Message</div><div class="send-icon" aria-label="Send message"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M4 5L29 16 4 27l4-11zM8 16h21" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg></div></div></div></section>
+<section class="screen"><h2>04 / Chat · pulley menu expanded</h2><div class="phone"><div class="status"><span>‹ &nbsp; 00:47</span><span>▰</span></div><div class="menu"><div>Home</div><div>Change model</div><div>Start new chat</div></div><div class="header">Sailmate · OpenAI</div><div class="sub">gpt-4.1-mini · example model</div><div class="user-message"><div class="role">You</div><div class="message">What can you help me with?</div></div><div class="composer"><div class="input">Message</div><div class="send-icon" aria-label="Send message"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M4 5L29 16 4 27l4-11zM8 16h21" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg></div></div></div></section>
 <section class="screen"><h2>05 / Change provider · key saved</h2><div class="phone"><div class="status"><span>00:47</span><span>▰</span></div><div class="header">Sailmate</div><div class="sub">Your AI companion</div><div class="heading">Choose your provider</div><div class="provider"><span class="delete" aria-label="Remove key">⌫</span><strong>OpenAI</strong><p class="muted">Key saved · Tap to start a new chat</p></div><div class="provider"><strong>Anthropic · Claude</strong><p class="muted">An Anthropic API key and API billing are required.</p></div><p class="muted note">Messages go directly to the selected provider. Switching providers starts a new chat; existing chats remain with their original provider.</p><p class="foot">Delete icon is symbolic here. The app uses Sailfish’s native delete icon and a confirmation dialog.</p></div></section>
 <section class="screen"><h2>06 / Confirm key removal</h2><div class="phone"><div class="status"><span>‹ &nbsp; Cancel</span><span>Remove &nbsp; ›</span></div><div class="header">Remove API key?</div><p class="message note">Remove the saved OpenAI key from this device? Conversation history is kept. This does not revoke the key at the provider.</p></div></section>
 </div>
@@ -22,4 +22,45 @@
 <section class="screen"><h2>10 / Connect · model discovery</h2><div class="phone"><div class="status"><span>‹ &nbsp; 02:37</span><span>▰</span></div><div class="header">Connect Work AI</div><p class="muted note">https://ai.example.org/v1</p><p class="muted">Your API key is stored using Sailfish Secrets. Connect checks access to the endpoint's model list.</p><div class="input"><span class="mask">••••••••••••</span><label>API key</label></div><div class="button">Connect</div><p class="foot">Chat availability also depends on billing and model permissions. No key is entered in this preview.</p></div></section>
 <section class="screen"><h2>11 / Manual model · no discovery check</h2><div class="phone"><div class="status"><span>‹ &nbsp; 02:37</span><span>▰</span></div><div class="header">Connect Work AI</div><p class="muted note">https://ai.example.org/v1<br>Model: vendor/chat-model</p><div class="label">ACCESS NOT VERIFIED</div><p class="muted">The model list request is skipped. Saving does not verify authentication, billing or model access. These are tested when you send a message.</p><div class="input"><span class="mask">••••••••••••</span><label>API key</label></div><div class="button">Save and continue</div></div></section>
 <section class="screen"><h2>12 / Custom chat · endpoint visible</h2><div class="phone"><div class="status"><span>‹ &nbsp; 02:37</span><span>▰</span></div><div class="header">Sailmate · Work AI</div><div class="sub">vendor/chat-model<br>https://ai.example.org/v1</div><div class="user-message"><div class="role">You</div><div class="message">Hello, can you help me test this connection?</div></div><div class="role">Sailmate</div><div class="message">Hello! This is an illustrative response showing the custom chat layout.</div><p class="foot">Fictional response — no API request was made.</p><div class="composer"><div class="input">Message</div><div class="send-icon" aria-label="Send message">➤</div></div></div></section>
-</div><p class="foot">Preview only · No changes to the application design or runtime · Back from chat returns to provider-specific history. Send glyph and back symbol are illustrative; the app uses native Sailfish page-stack navigation. Model picker and history use native lists.</p></body></html>
+</div>
+<section id="model-search" style="margin-top:40px">
+<h2>13 / Change model · search</h2>
+<p class="muted">Interactive illustration with sample model IDs, not a running Sailfish screen.</p>
+<div class="phone" style="width:330px;max-width:100%;display:flex;flex-direction:column">
+<div class="status"><span>‹ &nbsp; 02:37</span><span>▰</span></div>
+<div class="header">Choose model</div>
+<input id="model-query" type="search" aria-label="Search models" placeholder="Search models" autocomplete="off" style="width:100%;min-height:48px;flex-shrink:0;margin:20px 0 12px;padding:10px 0;border:0;border-bottom:1px solid #63adb9;border-radius:0;background:transparent;color:inherit;font:inherit">
+<div id="model-results" style="overflow-y:auto;min-height:0;flex:1"></div>
+</div>
+</section>
+<script>
+const sampleModels = ['gpt-4.1', 'gpt-4.1-mini', 'gpt-4.1-nano', 'gpt-4o', 'gpt-4o-mini', 'o3', 'o3-mini', 'o4-mini'];
+const modelQuery = document.getElementById('model-query');
+const modelResults = document.getElementById('model-results');
+let selectedModel = 'gpt-4.1-mini';
+function renderModels() {
+	const query = modelQuery.value.trim().toLowerCase();
+	const matches = sampleModels.filter(modelId => modelId.toLowerCase().includes(query));
+	modelResults.replaceChildren();
+	matches.forEach(modelId => {
+		const button = document.createElement('button');
+		button.type = 'button';
+		button.textContent = modelId;
+		button.setAttribute('aria-pressed', String(modelId === selectedModel));
+		button.style.cssText = 'display:block;width:100%;min-height:56px;padding:12px 0;text-align:left;border:0;background:transparent;font:inherit;overflow-wrap:anywhere;cursor:pointer;color:' + (modelId === selectedModel ? '#72d3d8' : '#edf6fa');
+		button.addEventListener('click', () => { selectedModel = modelId; renderModels(); });
+		modelResults.appendChild(button);
+	});
+	if (!matches.length) {
+		const empty = document.createElement('p');
+		empty.textContent = 'No matching models';
+		empty.className = 'muted';
+		empty.style.textAlign = 'center';
+		modelResults.appendChild(empty);
+	}
+	modelResults.scrollTop = 0;
+}
+modelQuery.addEventListener('input', renderModels);
+renderModels();
+</script>
+<p class="foot">Preview only · No changes to the application design or runtime · Back from chat returns to provider-specific history. Send glyph and back symbol are illustrative; the app uses native Sailfish page-stack navigation. Model picker and history use native lists.</p></body></html>

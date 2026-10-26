@@ -26,10 +26,11 @@ signals:
     void keySaved(QString provider);
     void keyLoaded(QString provider, QString key);
     void keyRemoved(QString provider);
+    void keyMissing(QString provider);
 private:
     bool begin(const QString &provider);
     void finish(const QString &error = QString());
-    void remember(const QString &provider, bool saved);
+    bool remember(const QString &provider, bool saved);
     Sailfish::Secrets::SecretManager m_manager;
     QStringList m_saved;
     bool m_busy;

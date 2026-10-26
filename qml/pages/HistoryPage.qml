@@ -2,6 +2,14 @@ import QtQuick 2.0
 import Sailfish.Silica 1.0
 
 Page {
+    id: page
+    function openChat(conversation) {
+        if (chat.busy || vault.busy || chat.unsaved) return
+        if (conversation) chat.openConversation(conversation)
+        else chat.newChat()
+        if (!chat.error) pageStack.push(Qt.resolvedUrl("ChatPage.qml"))
+    }
+
     allowedOrientations: Orientation.All
     backNavigation: !chat.busy && !vault.busy
     SilicaListView {
@@ -33,25 +41,41 @@ Page {
             Item { width: 1; height: Theme.paddingMedium }
         }
         PullDownMenu {
-            MenuItem { text: "Change provider"; enabled: !chat.busy && !vault.busy; onClicked: app.showProviders() }
+            MenuItem { text: "Home"; enabled: !chat.busy && !vault.busy; onClicked: app.showProviders() }
             MenuItem {
                 text: "Start new chat"
                 enabled: !chat.busy && !vault.busy
                 onClicked: {
                     if (chat.busy || vault.busy) return
-                    chat.newChat()
-                    pageStack.push(Qt.resolvedUrl("ChatPage.qml"))
+                    page.openChat("")
                 }
             }
         }
-        footer: Label {
-            x: Theme.horizontalPageMargin
-            width: parent.width - 2 * x
-            text: chat.error
-            textFormat: Text.PlainText
-            visible: text.length > 0
-            wrapMode: Text.Wrap
-            color: Theme.highlightColor
+        footer: Column {
+            width: history.width
+            spacing: Theme.paddingMedium
+            Button {
+                anchors.horizontalCenter: parent.horizontalCenter
+                text: "Load older chats"
+                visible: chat.hasMoreConversations
+                enabled: !chat.busy && !vault.busy
+                onClicked: chat.loadMoreConversations()
+            }
+            BusyIndicator {
+                anchors.horizontalCenter: parent.horizontalCenter
+                running: chat.busy || vault.busy
+                visible: running
+                size: BusyIndicatorSize.Medium
+            }
+            Label {
+                x: Theme.horizontalPageMargin
+                width: parent.width - 2 * x
+                text: chat.error || vault.error
+                textFormat: Text.PlainText
+                visible: text.length > 0
+                wrapMode: Text.Wrap
+                color: Theme.highlightColor
+            }
         }
         delegate: BackgroundItem {
             width: ListView.view.width
@@ -60,9 +84,7 @@ Page {
             enabled: !chat.busy && !vault.busy
             onClicked: {
                 if (chat.busy || vault.busy) return
-                chat.openConversation(modelData.id)
-                if (chat.error.length === 0)
-                    pageStack.push(Qt.resolvedUrl("ChatPage.qml"))
+                page.openChat(modelData.id)
             }
             Column {
                 x: Theme.horizontalPageMargin

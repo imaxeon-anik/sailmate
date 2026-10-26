@@ -45,7 +45,7 @@ Page {
             Label {
                 x: Theme.horizontalPageMargin
                 width: parent.width - 2 * x
-                text: "OpenAI-compatible streaming chat completions with Bearer authentication. Only use an endpoint you trust and are authorised to use: your API key and conversation will be sent there."
+                text: "OpenAI-compatible streaming chat completions with Bearer authentication. Your API key and conversation will be sent to this endpoint."
                 wrapMode: Text.Wrap
                 color: Theme.secondaryColor
                 font.pixelSize: Theme.fontSizeSmall
@@ -98,7 +98,7 @@ Page {
             Label {
                 x: Theme.horizontalPageMargin
                 width: parent.width - 2 * x
-                text: "Creating saves this profile before key entry. Name, URL and manual model cannot be edited or deleted. For endpoint changes, create a separate profile with its own key and history. Removing a saved key keeps the profile and history."
+                text: "Creating saves this profile before key entry. For endpoint changes, create a separate profile with its own key and history. Deleting a profile removes its saved key and local chats."
                 wrapMode: Text.Wrap
                 color: Theme.secondaryColor
                 font.pixelSize: Theme.fontSizeSmall

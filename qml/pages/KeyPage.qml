@@ -9,9 +9,11 @@ Page {
     property string manualModel: ""
     property bool saving: false
     property bool loading: false
+    property bool returnToConversation: false
 
     function submitKey() {
         if (chat.busy || vault.busy || !keyField.text.trim()) return
+        recoveryNotice.text = ""
         chat.clearError()
         keyField.focus = false
         chat.validateKey(providerId, keyField.text.trim())
@@ -68,7 +70,7 @@ Page {
                 x: Theme.horizontalPageMargin
                 width: parent.width - 2 * x
                 visible: page.baseUrl.length > 0
-                text: "Your key and conversation will be sent to this URL. Check the endpoint and your organisation's permission before continuing. To change it, create a separate profile; keys and history are not reused."
+                text: "Your key and conversation will be sent to this URL. Check the endpoint before continuing. To change it, create a separate profile; keys and history are not reused."
                 wrapMode: Text.Wrap
                 color: Theme.secondaryColor
                 font.pixelSize: Theme.fontSizeSmall
@@ -91,6 +93,17 @@ Page {
             }
             Button {
                 anchors.horizontalCenter: parent.horizontalCenter
+                text: "Recover saved key"
+                enabled: !chat.busy && !vault.busy
+                onClicked: {
+                    recoveryNotice.text = ""
+                    chat.clearError()
+                    page.loading = true
+                    vault.loadKey(page.providerId)
+                }
+            }
+            Button {
+                anchors.horizontalCenter: parent.horizontalCenter
                 text: "Cancel validation"
                 visible: chat.busy && !vault.busy
                 enabled: chat.busy && !vault.busy
@@ -101,6 +114,14 @@ Page {
                 size: BusyIndicatorSize.Medium
                 running: chat.busy || vault.busy
                 visible: running
+            }
+            Label {
+                id: recoveryNotice
+                x: Theme.horizontalPageMargin
+                width: parent.width - 2 * x
+                visible: text.length > 0
+                wrapMode: Text.Wrap
+                color: Theme.highlightColor
             }
             Label {
                 x: Theme.horizontalPageMargin
@@ -136,10 +157,27 @@ Page {
         onKeyLoaded: {
             if (page.status === PageStatus.Active && page.loading && provider === page.providerId && !chat.busy) {
                 page.loading = false
-                chat.activateProvider(provider, key)
-                if (chat.provider === provider && chat.error.length === 0) app.showChat()
+                if (page.returnToConversation) {
+                    chat.connectProvider(key)
+                    if (chat.error.length === 0) pageStack.pop()
+                } else {
+                    if (page.providerId.indexOf("custom-") === 0) {
+                        chat.showProviderHistory(provider)
+                        if (!chat.error) app.showCustomHistory()
+                    } else {
+                        chat.activateProvider(provider, key)
+                        if (chat.provider === provider && !chat.error) app.showChat()
+                    }
+                }
             }
         }
+        onKeyMissing: {
+            if (page.loading && provider === page.providerId) {
+                page.loading = false
+                recoveryNotice.text = "No saved key was found for this provider."
+            }
+        }
+        onErrorChanged: { if (vault.error) { page.loading = false; page.saving = false } }
     }
     Component.onDestruction: keyField.text = ""
 }

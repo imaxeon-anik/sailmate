@@ -161,6 +161,227 @@ private slots:
         QVERIFY(controller.m_key.isEmpty());
         QCOMPARE(controller.customProfiles().size(), 2);
     }
+    void customHistoryAndDeletion()
+    {
+        ChatController controller;
+        database(controller);
+        const QString first = controller.createCustomProfile("First", "https://first.invalid/v1", "model");
+        const QString second = controller.createCustomProfile("Second", "https://second.invalid/v1", "model");
+        controller.activateProvider(first, "fake-key");
+        controller.m_messages << entry("user", "first", "complete") << entry("assistant", "answer", "complete");
+        QVERIFY(controller.saveConversation());
+        const QString firstChat = controller.m_conversationId;
+        controller.activateProvider(second, "other-key");
+        controller.m_messages << entry("user", "second", "complete") << entry("assistant", "answer", "complete");
+        QVERIFY(controller.saveConversation());
+        const QString secondChat = controller.m_conversationId;
+
+        controller.showProviderHistory(first);
+        QCOMPARE(controller.provider(), first);
+        QCOMPARE(controller.conversations().size(), 1);
+        QVERIFY(controller.m_key.isEmpty());
+        QVERIFY(controller.messages().isEmpty());
+        QVERIFY(!controller.m_reply);
+        QVERIFY(!controller.busy());
+        controller.openConversation(firstChat);
+        QCOMPARE(controller.messages().size(), 2);
+        controller.openConversation(secondChat);
+        QVERIFY(!controller.error().isEmpty());
+
+        controller.setBusy(true);
+        QVERIFY(!controller.deleteCustomProfile(first));
+        controller.showProviderHistory(second);
+        QCOMPARE(controller.provider(), first);
+        controller.setBusy(false);
+        QVERIFY(!controller.deleteCustomProfile("openai"));
+        QCOMPARE(controller.customProfiles().size(), 2);
+        QVERIFY(controller.deleteCustomProfile(first));
+        QVERIFY(controller.provider().isEmpty());
+        QVERIFY(controller.messages().isEmpty());
+        QCOMPARE(controller.customProfiles().size(), 1);
+        QVERIFY(!controller.deleteCustomProfile(first));
+        QSqlQuery query(controller.m_database);
+        QVERIFY(query.exec("SELECT COUNT(*) FROM messages"));
+        QVERIFY(query.next());
+        QCOMPARE(query.value(0).toInt(), 2);
+        controller.showProviderHistory(second);
+        QCOMPARE(controller.conversations().size(), 1);
+        controller.openConversation(secondChat);
+        QCOMPARE(controller.messages().size(), 2);
+        ChatController restored;
+        QCOMPARE(restored.customProfiles().size(), 1);
+        QVERIFY(restored.supportedProvider(second));
+        QVERIFY(!restored.supportedProvider(first));
+        QVERIFY(!controller.m_reply);
+    }
+    void customDeletionRollback()
+    {
+        ChatController controller;
+        database(controller);
+        const QString provider = controller.createCustomProfile("Keep", "https://keep.invalid/v1", "model");
+        controller.activateProvider(provider, "fake-key");
+        controller.m_messages << entry("user", "keep", "complete") << entry("assistant", "answer", "complete");
+        QVERIFY(controller.saveConversation());
+        QSqlQuery query(controller.m_database);
+        QVERIFY(query.exec("CREATE TRIGGER prevent_delete BEFORE DELETE ON conversations BEGIN SELECT RAISE(ABORT, 'test failure'); END"));
+        QVERIFY(!controller.deleteCustomProfile(provider));
+        QVERIFY(!controller.error().isEmpty());
+        QCOMPARE(controller.customProfiles().size(), 1);
+        QVERIFY(query.exec("SELECT COUNT(*) FROM messages"));
+        QVERIFY(query.next());
+        QCOMPARE(query.value(0).toInt(), 2);
+        ChatController restored;
+        QVERIFY(restored.supportedProvider(provider));
+    }
+    void unsavedResponseCanBeRetriedLocally()
+    {
+        ChatController controller;
+        database(controller);
+        const QString provider = controller.createCustomProfile("Save retry", "https://save.invalid/v1", "model");
+        controller.activateProvider(provider, "fake-key");
+        QSqlQuery query(controller.m_database);
+        QVERIFY(query.exec("CREATE TRIGGER fail_save BEFORE INSERT ON messages BEGIN SELECT RAISE(ABORT, 'test failure'); END"));
+        controller.m_messages << entry("user", "question", "pending") << entry("assistant", "answer", "streaming");
+        controller.m_assistantIndex = 1;
+        controller.finishChat(true, QString());
+        QVERIFY(controller.unsaved());
+        QVERIFY(!controller.error().isEmpty());
+        controller.newChat();
+        controller.showProviderHistory(provider);
+        controller.forgetProvider(provider);
+        controller.openConversation("other");
+        controller.setModel("model");
+        controller.connectProvider("another-key");
+        QVERIFY(!controller.deleteCustomProfile(provider));
+        QVERIFY(!controller.startChat("another question", false));
+        QCOMPARE(controller.messages().size(), 2);
+        QCOMPARE(controller.provider(), provider);
+        QVERIFY(!controller.m_reply);
+        controller.retry();
+        QVERIFY(controller.unsaved());
+        QVERIFY(query.exec("DROP TRIGGER fail_save"));
+        controller.retry();
+        QVERIFY(!controller.unsaved());
+        QVERIFY(controller.error().isEmpty());
+        QVERIFY(!controller.m_reply);
+        QCOMPARE(controller.conversations().size(), 1);
+        const QString conversation = controller.m_conversationId;
+        controller.newChat();
+        controller.openConversation(conversation);
+        QCOMPARE(controller.messages().at(1).toMap().value("content").toString(), QStringLiteral("answer"));
+    }
+    void offlineHistoryAndReconnectKeepConversation()
+    {
+        ChatController controller;
+        database(controller);
+        const QString provider = controller.createCustomProfile("Offline", "https://offline.invalid/v1", "model");
+        controller.activateProvider(provider, "fake-key");
+        controller.m_messages << entry("user", "question", "complete") << entry("assistant", "answer", "complete");
+        QVERIFY(controller.saveConversation());
+        const QString conversation = controller.m_conversationId;
+        controller.forgetProvider(provider);
+        controller.showProviderHistory(provider);
+        controller.openConversation(conversation);
+        QVERIFY(controller.error().isEmpty());
+        QVERIFY(!controller.connected());
+        QVERIFY(!controller.m_reply);
+        QCOMPARE(controller.model(), QStringLiteral("model"));
+        QCOMPARE(controller.messages().size(), 2);
+        controller.connectProvider("recovered-key");
+        QVERIFY(controller.connected());
+        QCOMPARE(controller.m_conversationId, conversation);
+        QCOMPARE(controller.messages().size(), 2);
+        QVERIFY(!controller.m_reply);
+    }
+    void unavailableSavedModelRequiresSelection()
+    {
+        ChatController controller;
+        database(controller);
+        const QString provider = controller.createCustomProfile("Models", "https://models.invalid/v1", "replacement");
+        controller.activateProvider(provider, "fake-key");
+        controller.m_model = QStringLiteral("retired-model");
+        controller.m_messages << entry("user", "question", "complete") << entry("assistant", "answer", "complete");
+        QVERIFY(controller.saveConversation());
+        const QString conversation = controller.m_conversationId;
+        controller.forgetProvider(provider);
+        controller.showProviderHistory(provider);
+        controller.openConversation(conversation);
+        controller.connectProvider("fake-key");
+        QCOMPARE(controller.model(), QStringLiteral("retired-model"));
+        QVERIFY(!controller.models().contains(controller.model()));
+        QVERIFY(!controller.startChat("must not send", false));
+        QVERIFY(!controller.m_reply);
+
+        controller.m_requestProvider = provider;
+        FakeReply *reply = new FakeReply("{\"data\":[{\"id\":\"replacement\"}]}", 200, "application/json", &controller);
+        controller.attachReply(reply, ChatController::LoadModels);
+        reply->complete();
+        QVERIFY(controller.error().isEmpty());
+        QCOMPARE(controller.model(), QStringLiteral("retired-model"));
+        QCOMPARE(controller.m_conversationId, conversation);
+        QCOMPARE(controller.messages().size(), 2);
+        controller.setModel("replacement");
+        QCOMPARE(controller.model(), QStringLiteral("replacement"));
+        QVERIFY(controller.models().contains(controller.model()));
+        QVERIFY(!controller.m_reply);
+    }
+    void discardUnsavedKeepsStoredHistory()
+    {
+        ChatController controller;
+        database(controller);
+        const QString provider = controller.createCustomProfile("Discard", "https://discard.invalid/v1", "model");
+        controller.activateProvider(provider, "fake-key");
+        controller.m_messages << entry("user", "saved question", "complete") << entry("assistant", "saved answer", "complete");
+        QVERIFY(controller.saveConversation());
+        const QString conversation = controller.m_conversationId;
+        controller.discardUnsavedConversation();
+        QCOMPARE(controller.messages().size(), 2);
+        QSqlQuery query(controller.m_database);
+        QVERIFY(query.exec("CREATE TRIGGER fail_save BEFORE INSERT ON messages BEGIN SELECT RAISE(ABORT, 'test failure'); END"));
+        controller.m_messages << entry("user", "unsaved question", "pending") << entry("assistant", "unsaved answer", "streaming");
+        controller.m_assistantIndex = 3;
+        controller.finishChat(true, QString());
+        QVERIFY(controller.unsaved());
+        controller.setBusy(true);
+        controller.discardUnsavedConversation();
+        QVERIFY(controller.unsaved());
+        QCOMPARE(controller.messages().size(), 4);
+        controller.setBusy(false);
+        controller.discardUnsavedConversation();
+        QVERIFY(!controller.unsaved());
+        QVERIFY(controller.messages().isEmpty());
+        QVERIFY(controller.error().isEmpty());
+        QVERIFY(controller.m_conversationId.isEmpty());
+        QVERIFY(!controller.m_reply);
+        controller.openConversation(conversation);
+        QCOMPARE(controller.messages().size(), 2);
+        QCOMPARE(controller.messages().last().toMap().value("content").toString(), QStringLiteral("saved answer"));
+    }
+    void historyPagination()
+    {
+        ChatController controller;
+        database(controller);
+        const QString provider = controller.createCustomProfile("Many chats", "https://many.invalid/v1", "model");
+        QSqlQuery query(controller.m_database);
+        for (int index = 0; index < 401; ++index) {
+            query.prepare("INSERT INTO conversations VALUES (?, 'chat', ?, 'model', ?)");
+            query.addBindValue(QString::number(index));
+            query.addBindValue(index == 400 ? "openai" : provider);
+            query.addBindValue(index);
+            QVERIFY(query.exec());
+        }
+        controller.showProviderHistory(provider);
+        QCOMPARE(controller.conversations().size(), 200);
+        QVERIFY(controller.hasMoreConversations());
+        controller.loadMoreConversations();
+        QCOMPARE(controller.conversations().size(), 400);
+        QVERIFY(!controller.hasMoreConversations());
+        controller.loadMoreConversations();
+        QCOMPARE(controller.conversations().size(), 400);
+        controller.showProviderHistory("openai");
+        QCOMPARE(controller.conversations().size(), 1);
+        QVERIFY(!controller.hasMoreConversations());
+    }
     void customDiscoveryFailures()
     {
         ChatController controller;

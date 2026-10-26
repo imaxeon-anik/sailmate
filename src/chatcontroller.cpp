@@ -191,6 +191,75 @@ QString ChatController::createCustomProfile(QString name, QString baseUrl, QStri
     return id;
 }
 
+void ChatController::showProviderHistory(QString provider)
+{
+    if (!idle() || !canReplaceConversation())
+        return;
+    if (!supportedProvider(provider)) {
+        setError(tr("Unsupported provider."));
+        return;
+    }
+    if (m_provider != provider) {
+        m_key.clear();
+        m_model.clear();
+        m_models.clear();
+        m_provider = provider;
+        emit providerChanged();
+        emit modelChanged();
+        emit modelsChanged();
+    }
+    resetChat();
+    clearError();
+    m_historyLimit = 200;
+    refreshConversations();
+}
+
+bool ChatController::deleteCustomProfile(QString provider)
+{
+    if (!idle() || !canReplaceConversation())
+        return false;
+    if (!isCustomProviderId(provider) || customProfile(provider).isEmpty()) {
+        setError(tr("Unknown custom profile."));
+        return false;
+    }
+    if (!ensureDatabase())
+        return false;
+    QVariantList profiles;
+    for (const QVariant &value : m_customProfiles) {
+        if (value.toMap().value(QStringLiteral("id")).toString() != provider)
+            profiles.append(value);
+    }
+    if (!m_database.transaction()) {
+        setError(tr("Could not delete the profile's chats. The profile was kept; retry deletion."));
+        return false;
+    }
+    QSqlQuery query(m_database);
+    query.prepare(QStringLiteral("DELETE FROM messages WHERE conversation_id IN (SELECT id FROM conversations WHERE provider = ?)"));
+    query.addBindValue(provider);
+    bool ok = query.exec();
+    if (ok) {
+        query.prepare(QStringLiteral("DELETE FROM conversations WHERE provider = ?"));
+        query.addBindValue(provider);
+        ok = query.exec();
+    }
+    if (!ok || !m_database.commit()) {
+        m_database.rollback();
+        setError(tr("Could not delete the profile's chats. The profile was kept; retry deletion."));
+        return false;
+    }
+    QSettings settings;
+    settings.setValue(QStringLiteral("providers/custom"), profiles);
+    settings.sync();
+    if (settings.status() != QSettings::NoError) {
+        setError(tr("Chats were deleted, but the profile could not be removed. Retry deletion."));
+        return false;
+    }
+    forgetProvider(provider);
+    m_customProfiles = profiles;
+    emit customProfilesChanged();
+    return true;
+}
+
 QNetworkRequest ChatController::apiRequest(const QString &provider, const QString &key, bool chat) const
 {
     const bool anthropic = provider == QLatin1String("anthropic");
@@ -265,7 +334,7 @@ void ChatController::validateKey(QString provider, QString key)
 
 void ChatController::activateProvider(QString provider, QString key)
 {
-    if (!idle() || !validCredentials(provider, key))
+    if (!idle() || !canReplaceConversation() || !validCredentials(provider, key))
         return;
     if (!m_provider.isEmpty() && !m_model.isEmpty())
         m_previousModels.insert(m_provider, m_model);
@@ -277,8 +346,21 @@ void ChatController::activateProvider(QString provider, QString key)
     emit providerChanged();
     emit modelChanged();
     emit modelsChanged();
+    m_historyLimit = 200;
     refreshConversations();
     fetchModels(LoadModels, provider, key);
+}
+
+void ChatController::connectProvider(QString key)
+{
+    if (!idle() || !canReplaceConversation() || !validCredentials(m_provider, key))
+        return;
+    if (!m_model.isEmpty())
+        m_previousModels.insert(m_provider, m_model);
+    m_key = key;
+    m_models.clear();
+    emit modelsChanged();
+    fetchModels(LoadModels, m_provider, key);
 }
 
 void ChatController::fetchModels(Operation operation, const QString &provider, const QString &key)
@@ -292,7 +374,8 @@ void ChatController::fetchModels(Operation operation, const QString &provider, c
         m_requestKey.clear();
         if (operation == LoadModels) {
             m_models = QStringList() << manualModel;
-            m_model = manualModel;
+            if (m_conversationId.isEmpty())
+                m_model = manualModel;
             emit modelsChanged();
             emit modelChanged();
         }
@@ -416,7 +499,9 @@ void ChatController::finishReply()
     if (failure.isEmpty() && operation == LoadModels) {
         m_models = available;
         const QString previous = m_previousModels.value(m_provider);
-        if (available.contains(previous)) {
+        if (!m_conversationId.isEmpty()) {
+            m_previousModels.insert(m_provider, m_model);
+        } else if (available.contains(previous)) {
             m_model = previous;
         } else if (m_provider == QStringLiteral("openai")
                    && available.contains(QStringLiteral("gpt-4.1-mini"))) {
@@ -482,7 +567,7 @@ void ChatController::cancel()
 
 void ChatController::setModel(QString model)
 {
-    if (!idle())
+    if (!idle() || !canReplaceConversation())
         return;
     if (!m_models.contains(model)) {
         setError(tr("Select an available model."));
@@ -507,7 +592,7 @@ void ChatController::resetChat()
 
 void ChatController::newChat()
 {
-    if (!idle())
+    if (!idle() || !canReplaceConversation())
         return;
     resetChat();
     clearError();
@@ -515,7 +600,7 @@ void ChatController::newChat()
 
 void ChatController::forgetProvider(QString provider)
 {
-    if (!idle())
+    if (!idle() || !canReplaceConversation())
         return;
     if (!supportedProvider(provider)) {
         setError(tr("Unsupported provider."));
@@ -528,6 +613,7 @@ void ChatController::forgetProvider(QString provider)
         m_model.clear();
         m_models.clear();
         m_conversations.clear();
+        m_hasMoreConversations = false;
         resetChat();
         emit providerChanged();
         emit modelChanged();
@@ -547,6 +633,10 @@ void ChatController::retry()
 {
     if (!idle())
         return;
+    if (m_unsaved) {
+        retrySave();
+        return;
+    }
     if (m_models.isEmpty() && supportedProvider(m_provider) && !m_key.isEmpty()) {
         fetchModels(LoadModels, m_provider, m_key);
         return;
@@ -566,6 +656,8 @@ void ChatController::retry()
 bool ChatController::startChat(const QString &text, bool retrying)
 {
     Q_UNUSED(retrying);
+    if (!canReplaceConversation())
+        return false;
     if (m_key.isEmpty() || !supportedProvider(m_provider) || !m_models.contains(m_model)) {
         setError(tr("Activate a provider and select an available model first."));
         return false;
@@ -646,10 +738,42 @@ void ChatController::finishChat(bool success, const QString &reason)
         emit messagesChanged();
     }
     setError(reason);
-    if (success && !saveConversation())
-        success = false;
+    if (success) {
+        m_unsaved = !saveConversation();
+        emit unsavedChanged();
+        success = !m_unsaved;
+    }
     setBusy(false);
     emit requestFinished(success);
+}
+
+bool ChatController::canReplaceConversation()
+{
+    if (!m_unsaved)
+        return true;
+    setError(tr("This response has not been saved. Retry saving before leaving or sending another message."));
+    return false;
+}
+
+void ChatController::retrySave()
+{
+    if (!idle() || !m_unsaved)
+        return;
+    if (saveConversation()) {
+        m_unsaved = false;
+        emit unsavedChanged();
+        clearError();
+    }
+}
+
+void ChatController::discardUnsavedConversation()
+{
+    if (!idle() || !m_unsaved)
+        return;
+    m_unsaved = false;
+    resetChat();
+    emit unsavedChanged();
+    clearError();
 }
 
 void ChatController::streamError(const QString &reason)
@@ -928,17 +1052,32 @@ bool ChatController::saveConversation()
     return true;
 }
 
+void ChatController::loadMoreConversations()
+{
+    if (!idle() || !m_hasMoreConversations)
+        return;
+    m_historyLimit += 200;
+    clearError();
+    refreshConversations();
+}
+
 void ChatController::refreshConversations()
 {
     m_conversations.clear();
+    m_hasMoreConversations = false;
     if (!m_provider.isEmpty() && ensureDatabase()) {
         QSqlQuery query(m_database);
-        query.prepare(QStringLiteral("SELECT id, title, provider, model FROM conversations WHERE provider = ? ORDER BY updated DESC LIMIT 200"));
+        query.prepare(QStringLiteral("SELECT id, title, provider, model FROM conversations WHERE provider = ? ORDER BY updated DESC, id DESC LIMIT ?"));
         query.addBindValue(m_provider);
+        query.addBindValue(m_historyLimit + 1);
         if (!query.exec()) {
             setError(tr("Conversation history could not be loaded."));
         } else {
             while (query.next()) {
+                if (m_conversations.size() == m_historyLimit) {
+                    m_hasMoreConversations = true;
+                    break;
+                }
                 QVariantMap entry;
                 entry.insert(QStringLiteral("id"), query.value(0));
                 entry.insert(QStringLiteral("title"), query.value(1));
@@ -953,7 +1092,7 @@ void ChatController::refreshConversations()
 
 void ChatController::openConversation(QString id)
 {
-    if (!idle())
+    if (!idle() || !canReplaceConversation())
         return;
     if (m_provider.isEmpty() || id.isEmpty() || id.size() > 100) {
         setError(tr("Select a conversation for the active provider."));
@@ -1001,7 +1140,7 @@ void ChatController::openConversation(QString id)
     m_title = title;
     m_messages = loaded;
     m_assistantIndex = -1;
-    if (m_models.contains(model) && m_model != model) {
+    if (m_model != model) {
         m_model = model;
         m_previousModels.insert(m_provider, model);
         emit modelChanged();

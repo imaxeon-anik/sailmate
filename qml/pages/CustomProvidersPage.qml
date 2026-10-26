@@ -5,26 +5,13 @@ Page {
     id: page
     allowedOrientations: Orientation.All
     backNavigation: !chat.busy && !vault.busy
-    property string pendingProvider: ""
+    property string deletingProvider: ""
 
     SilicaListView {
         id: profiles
         anchors.fill: parent
         model: chat.customProfiles
-        header: Column {
-            width: profiles.width
-            spacing: Theme.paddingLarge
-            PageHeader { title: "Custom providers" }
-            Label {
-                x: Theme.horizontalPageMargin
-                width: parent.width - 2 * x
-                text: "Use only endpoints approved by your organisation. Your API key and conversation are sent to the chosen URL. Profiles cannot be edited; create a separate profile to change an endpoint."
-                wrapMode: Text.Wrap
-                color: Theme.secondaryColor
-                font.pixelSize: Theme.fontSizeSmall
-            }
-            Item { width: 1; height: Theme.paddingSmall }
-        }
+        header: PageHeader { title: "Custom providers" }
         PullDownMenu {
             MenuItem {
                 text: "Add profile"
@@ -36,26 +23,31 @@ Page {
                 }
             }
         }
-        delegate: BackgroundItem {
+        delegate: ListItem {
             id: profileItem
             width: profiles.width
-            height: Math.max(Theme.itemSizeLarge, info.height + 2 * Theme.paddingLarge)
+            contentHeight: Math.max(Theme.itemSizeLarge, info.height + 2 * Theme.paddingLarge)
             enabled: !chat.busy && !vault.busy
             property bool saved: vault.savedProviders.indexOf(modelData.id) !== -1
+            menu: ContextMenu {
+                MenuItem {
+                    text: "Remove saved key"
+                    enabled: profileItem.saved && !chat.busy && !vault.busy
+                    onClicked: {
+                        var provider = modelData.id
+                        var dialog = pageStack.push(Qt.resolvedUrl("RemoveKeyDialog.qml"), {
+                            providerTitle: modelData.name, baseUrl: modelData.baseUrl
+                        })
+                        dialog.accepted.connect(function() {
+                            if (!chat.busy && !vault.busy) vault.removeKey(provider)
+                        })
+                    }
+                }
+            }
             onClicked: {
                 if (chat.busy || vault.busy) return
-                chat.clearError()
-                if (saved) {
-                    page.pendingProvider = modelData.id
-                    vault.loadKey(modelData.id)
-                } else {
-                    pageStack.push(Qt.resolvedUrl("KeyPage.qml"), {
-                        providerId: modelData.id,
-                        providerTitle: modelData.name,
-                        baseUrl: modelData.baseUrl,
-                        manualModel: modelData.model
-                    })
-                }
+                chat.showProviderHistory(modelData.id)
+                if (!chat.error) pageStack.push(Qt.resolvedUrl("HistoryPage.qml"))
             }
             Column {
                 id: info
@@ -88,7 +80,7 @@ Page {
                 }
                 Label {
                     width: parent.width
-                    text: profileItem.saved ? "Key saved · Tap to start a new chat" : "No saved key · Tap to set up"
+                    text: profileItem.saved ? "Key saved" : "No saved key"
                     wrapMode: Text.Wrap
                     color: Theme.secondaryColor
                     font.pixelSize: Theme.fontSizeSmall
@@ -99,18 +91,20 @@ Page {
                 anchors.rightMargin: Theme.horizontalPageMargin
                 anchors.verticalCenter: parent.verticalCenter
                 icon.source: "image://theme/icon-m-delete"
-                Accessible.name: "Remove saved key"
-                visible: profileItem.saved
+                Accessible.name: "Delete custom profile"
                 enabled: !chat.busy && !vault.busy
                 onClicked: {
                     if (chat.busy || vault.busy) return
                     var provider = modelData.id
-                    var dialog = pageStack.push(Qt.resolvedUrl("RemoveKeyDialog.qml"), {
+                    var dialog = pageStack.push(Qt.resolvedUrl("DeleteProfileDialog.qml"), {
                         providerTitle: modelData.name,
                         baseUrl: modelData.baseUrl
                     })
                     dialog.accepted.connect(function() {
-                        if (!chat.busy && !vault.busy) vault.removeKey(provider)
+                        if (!chat.busy && !vault.busy) {
+                            page.deletingProvider = provider
+                            vault.removeKey(provider)
+                        }
                     })
                 }
             }
@@ -145,14 +139,16 @@ Page {
     Connections {
         target: vault
         onKeyRemoved: {
-            if (provider !== "openai" && provider !== "anthropic") chat.forgetProvider(provider)
-        }
-        onKeyLoaded: {
-            if (page.status === PageStatus.Active && page.pendingProvider === provider && !chat.busy) {
-                page.pendingProvider = ""
-                chat.activateProvider(provider, key)
-                if (chat.provider === provider && chat.error.length === 0) app.showChat()
+            if (provider === page.deletingProvider) {
+                page.deletingProvider = ""
+                chat.forgetProvider(provider)
+                chat.deleteCustomProfile(provider)
+            } else if (provider.indexOf("custom-") === 0) {
+                chat.forgetProvider(provider)
             }
+        }
+        onErrorChanged: {
+            if (vault.error) page.deletingProvider = ""
         }
     }
 }

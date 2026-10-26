@@ -48,7 +48,7 @@ void CredentialStore::finish(const QString &error)
     emit busyChanged();
 }
 
-void CredentialStore::remember(const QString &provider, bool saved)
+bool CredentialStore::remember(const QString &provider, bool saved)
 {
     if (saved && !m_saved.contains(provider))
         m_saved.append(provider);
@@ -59,6 +59,7 @@ void CredentialStore::remember(const QString &provider, bool saved)
     settings.setValue(QStringLiteral("credentials/providers"), m_saved);
     settings.sync();
     emit savedProvidersChanged();
+    return settings.status() == QSettings::NoError;
 }
 
 void CredentialStore::saveKey(const QString &provider, const QString &key)
@@ -90,7 +91,10 @@ void CredentialStore::saveKey(const QString &provider, const QString &key)
             finish(tr("Could not save the key using Sailfish Secrets. Unlock the device and retry. No plaintext fallback is used."));
             return;
         }
-        remember(provider, true);
+        if (!remember(provider, true)) {
+            finish(tr("The key is stored in Sailfish Secrets, but its settings index could not be saved. Free storage or fix settings access, then recover the saved key."));
+            return;
+        }
         finish();
         emit keySaved(provider);
     });
@@ -112,9 +116,20 @@ void CredentialStore::loadKey(const QString &provider)
         const QString key = QString::fromUtf8(request->secret().data());
         request->deleteLater();
         if (result.code() != Result::Succeeded || key.isEmpty()) {
-            if (result.errorCode() == Result::InvalidSecretError)
-                remember(provider, false);
+            if (result.errorCode() == Result::InvalidSecretError) {
+                if (!remember(provider, false)) {
+                    finish(tr("No saved key was found, and the settings index could not be updated."));
+                    return;
+                }
+                finish();
+                emit keyMissing(provider);
+                return;
+            }
             finish(tr("Could not read the saved key. Unlock the device and retry, or remove and reconnect the provider."));
+            return;
+        }
+        if (!remember(provider, true)) {
+            finish(tr("The saved key was found, but its settings index could not be saved. Check free storage and settings access, then retry."));
             return;
         }
         finish();
@@ -140,7 +155,11 @@ void CredentialStore::removeKey(const QString &provider)
             finish(tr("Could not remove the saved key. Unlock the device and retry."));
             return;
         }
-        remember(provider, false);
+        if (!remember(provider, false)) {
+            finish(tr("The key was removed, but its settings index could not be updated. Retry removal."));
+            emit keyRemoved(provider);
+            return;
+        }
         finish();
         emit keyRemoved(provider);
     });

@@ -17,11 +17,16 @@ ApplicationWindow {
     Component { id: providerPage; ProviderPage {} }
     Component { id: historyPage; HistoryPage {} }
     Component { id: chatPage; ChatPage {} }
+    Component { id: customProvidersPage; CustomProvidersPage {} }
+
+    function showCustomHistory() {
+        pageStack.replaceAbove(null, [providerPage, customProvidersPage, historyPage])
+    }
 
     function showProviders() {
         pageStack.replaceAbove(null, providerPage)
     }
     function showChat() {
-        pageStack.replaceAbove(null, [historyPage, chatPage])
+        pageStack.replaceAbove(null, [providerPage, historyPage, chatPage])
     }
 }

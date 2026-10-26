@@ -3,8 +3,35 @@ import Sailfish.Silica 1.0
 
 Page {
     id: page
+    property bool loadingKey: false
+    property string connectingProvider: ""
+    readonly property bool modelAvailable: chat.models.indexOf(chat.model) !== -1
+
+    function enterKey() {
+        var manualModel = ""
+        for (var index = 0; index < chat.customProfiles.length; ++index) {
+            if (chat.customProfiles[index].id === chat.provider) {
+                manualModel = chat.customProfiles[index].model
+                break
+            }
+        }
+        pageStack.push(Qt.resolvedUrl("KeyPage.qml"), {
+            providerId: chat.provider, providerTitle: chat.providerTitle,
+            baseUrl: chat.providerEndpoint, manualModel: manualModel,
+            returnToConversation: true
+        })
+    }
+
+    function connectSavedKey() {
+        if (chat.busy || vault.busy || chat.unsaved) return
+        chat.clearError()
+        connectingProvider = chat.provider
+        loadingKey = true
+        vault.loadKey(connectingProvider)
+    }
+
     allowedOrientations: Orientation.All
-    backNavigation: !chat.busy && !vault.busy
+    backNavigation: !chat.busy && !vault.busy && !chat.unsaved
     SilicaListView {
         id: messages
         anchors { top: parent.top; left: parent.left; right: parent.right; bottom: composer.top }
@@ -26,7 +53,7 @@ Page {
             Label {
                 x: Theme.horizontalPageMargin
                 width: parent.width - 2 * x
-                text: chat.model || "Loading models…"
+                text: chat.model || (chat.busy ? "Loading models…" : "Not connected")
                 textFormat: Text.PlainText
                 wrapMode: Text.Wrap
                 font.pixelSize: Theme.fontSizeSmall
@@ -45,9 +72,10 @@ Page {
             Item { width: 1; height: Theme.paddingMedium }
         }
         PullDownMenu {
-            MenuItem { text: "Change provider"; enabled: !chat.busy && !vault.busy; onClicked: app.showProviders() }
-            MenuItem { text: "Change model"; enabled: !chat.busy && !vault.busy && chat.models.length > 0; onClicked: pageStack.push(Qt.resolvedUrl("ModelPage.qml")) }
-            MenuItem { text: "Start new chat"; enabled: !chat.busy && !vault.busy; onClicked: chat.newChat() }
+            MenuItem { text: "Home"; enabled: !chat.busy && !vault.busy && !chat.unsaved; onClicked: app.showProviders() }
+            MenuItem { text: "Change model"; enabled: !chat.busy && !vault.busy && !chat.unsaved && chat.models.length > 0; onClicked: pageStack.push(Qt.resolvedUrl("ModelPage.qml")) }
+            MenuItem { text: "Start new chat"; enabled: !chat.busy && !vault.busy && !chat.unsaved; onClicked: chat.newChat() }
+            MenuItem { text: "Update API key"; enabled: !chat.busy && !vault.busy && !chat.unsaved; onClicked: page.enterKey() }
         }
         delegate: Item {
             id: messageRow
@@ -133,8 +161,24 @@ Page {
         Label {
             x: Theme.horizontalPageMargin
             width: parent.width - 2 * x
-            visible: chat.error.length > 0
-            text: chat.error
+            visible: chat.connected && !page.modelAvailable && !chat.busy
+            text: "This chat's model is unavailable. Choose a replacement before sending."
+            wrapMode: Text.Wrap
+            color: Theme.highlightColor
+            font.pixelSize: Theme.fontSizeSmall
+        }
+        Button {
+            anchors.horizontalCenter: parent.horizontalCenter
+            text: "Choose model"
+            visible: chat.connected && !page.modelAvailable && !chat.busy
+            enabled: !vault.busy && !chat.unsaved
+            onClicked: pageStack.push(Qt.resolvedUrl("ModelPage.qml"))
+        }
+        Label {
+            x: Theme.horizontalPageMargin
+            width: parent.width - 2 * x
+            visible: chat.unsaved || chat.error.length > 0 || vault.error.length > 0
+            text: chat.unsaved ? "Response not saved. Retry saving or discard the unsaved changes." : (chat.error || vault.error)
             textFormat: Text.PlainText
             color: Theme.highlightColor
             wrapMode: Text.Wrap
@@ -151,7 +195,7 @@ Page {
                 placeholderText: "Message"
                 labelVisible: false
                 Accessible.name: "Message"
-                enabled: !chat.busy && !vault.busy
+                enabled: !chat.busy && !vault.busy && !chat.unsaved
             }
             IconButton {
                 id: sendButton
@@ -162,7 +206,7 @@ Page {
                 height: Theme.itemSizeSmall
                 icon.source: chat.busy ? "image://theme/icon-m-cancel" : "image://theme/icon-m-send"
                 Accessible.name: chat.busy ? "Cancel response" : "Send message"
-                enabled: !vault.busy && (chat.busy || (input.text.trim().length > 0 && chat.model.length > 0))
+                enabled: !vault.busy && (chat.busy || (!chat.unsaved && chat.connected && page.modelAvailable && input.text.trim().length > 0))
                 onClicked: {
                     if (vault.busy) return
                     if (chat.busy) chat.cancel()
@@ -177,10 +221,35 @@ Page {
         }
         Button {
             anchors.horizontalCenter: parent.horizontalCenter
-            text: "Retry"
-            visible: chat.error.length > 0 && !chat.busy
+            text: "Connect"
+            visible: !chat.connected && !chat.busy && !chat.unsaved
+            enabled: !vault.busy
+            onClicked: page.connectSavedKey()
+        }
+        BusyIndicator {
+            anchors.horizontalCenter: parent.horizontalCenter
+            running: vault.busy
+            visible: running
+            size: BusyIndicatorSize.Medium
+        }
+        Button {
+            anchors.horizontalCenter: parent.horizontalCenter
+            text: chat.unsaved ? "Retry save" : "Retry"
+            visible: (chat.unsaved || chat.error.length > 0) && !chat.busy
             enabled: !chat.busy && !vault.busy
             onClicked: chat.retry()
+        }
+        Button {
+            anchors.horizontalCenter: parent.horizontalCenter
+            text: "Discard unsaved changes"
+            visible: chat.unsaved
+            enabled: !chat.busy && !vault.busy
+            onClicked: {
+                var dialog = pageStack.push(Qt.resolvedUrl("DiscardUnsavedDialog.qml"))
+                dialog.accepted.connect(function() {
+                    if (!chat.busy && !vault.busy) chat.discardUnsavedConversation()
+                })
+            }
         }
         Item { width: 1; height: Theme.paddingMedium }
     }
@@ -190,6 +259,22 @@ Page {
             if (messages.atYEnd || chat.messages.length <= 2)
                 scrollTimer.restart()
         }
+    }
+    Connections {
+        target: vault
+        onKeyLoaded: {
+            if (page.loadingKey && provider === page.connectingProvider && page.status === PageStatus.Active) {
+                page.loadingKey = false
+                chat.connectProvider(key)
+            }
+        }
+        onKeyMissing: {
+            if (page.loadingKey && provider === page.connectingProvider && page.status === PageStatus.Active) {
+                page.loadingKey = false
+                page.enterKey()
+            }
+        }
+        onErrorChanged: { if (vault.error) page.loadingKey = false }
     }
     Timer { id: scrollTimer; interval: 50; onTriggered: messages.positionViewAtEnd() }
 }

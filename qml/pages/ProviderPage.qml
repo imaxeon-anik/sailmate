@@ -103,7 +103,7 @@ Page {
                     Label { text: "Custom"; color: customItem.highlighted ? Theme.highlightColor : Theme.primaryColor }
                     Label {
                         width: parent.width
-                        text: "Named OpenAI-compatible API profiles. Choose where your messages are sent."
+                        text: "Named OpenAI-compatible API profiles."
                         wrapMode: Text.Wrap
                         font.pixelSize: Theme.fontSizeSmall
                         color: Theme.secondaryColor

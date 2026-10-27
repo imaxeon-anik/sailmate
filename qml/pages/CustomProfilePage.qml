@@ -37,19 +37,18 @@ Page {
     SilicaFlickable {
         anchors.fill: parent
         contentHeight: column.height
+        PullDownMenu {
+            MenuItem {
+                text: "Help"
+                enabled: !page.creating && !chat.busy && !vault.busy
+                onClicked: pageStack.push(Qt.resolvedUrl("HelpPage.qml"), { topic: "profile" })
+            }
+        }
         Column {
             id: column
             width: parent.width
             spacing: Theme.paddingLarge
             PageHeader { title: "Add custom profile" }
-            Label {
-                x: Theme.horizontalPageMargin
-                width: parent.width - 2 * x
-                text: "OpenAI-compatible streaming chat completions with Bearer authentication. Your API key and conversation will be sent to this endpoint."
-                wrapMode: Text.Wrap
-                color: Theme.secondaryColor
-                font.pixelSize: Theme.fontSizeSmall
-            }
             TextField {
                 id: nameField
                 width: parent.width
@@ -72,7 +71,7 @@ Page {
             Label {
                 x: Theme.horizontalPageMargin
                 width: parent.width - 2 * x
-                text: "Include /v1 if your service requires it. Sailmate appends /models or /chat/completions. HTTPS only; no user information, query or fragment. Azure deployment URLs, query authentication and custom headers are not supported."
+                text: "Include /v1 if required."
                 wrapMode: Text.Wrap
                 color: Theme.secondaryColor
                 font.pixelSize: Theme.fontSizeSmall
@@ -86,22 +85,6 @@ Page {
                 inputMethodHints: Qt.ImhNoAutoUppercase | Qt.ImhNoPredictiveText
                 EnterKey.iconSource: "image://theme/icon-m-enter-close"
                 EnterKey.onClicked: focus = false
-            }
-            Label {
-                x: Theme.horizontalPageMargin
-                width: parent.width - 2 * x
-                text: "A manual model skips the /models request. The next step saves your key without checking authentication or model access; only a chat request can test them. Use the service's exact model ID."
-                wrapMode: Text.Wrap
-                color: Theme.secondaryColor
-                font.pixelSize: Theme.fontSizeSmall
-            }
-            Label {
-                x: Theme.horizontalPageMargin
-                width: parent.width - 2 * x
-                text: "Creating saves this profile before key entry. For endpoint changes, create a separate profile with its own key and history. Deleting a profile removes its saved key and local chats."
-                wrapMode: Text.Wrap
-                color: Theme.secondaryColor
-                font.pixelSize: Theme.fontSizeSmall
             }
             Button {
                 anchors.horizontalCenter: parent.horizontalCenter

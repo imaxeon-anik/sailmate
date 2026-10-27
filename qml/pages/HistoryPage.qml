@@ -16,30 +16,7 @@ Page {
         id: history
         anchors.fill: parent
         model: chat.conversations
-        header: Column {
-            width: history.width
-            spacing: Theme.paddingSmall
-            PageHeader { title: "Chat history" }
-            Label {
-                x: Theme.horizontalPageMargin
-                width: parent.width - 2 * x
-                text: chat.providerTitle
-                textFormat: Text.PlainText
-                wrapMode: Text.Wrap
-                color: Theme.highlightColor
-            }
-            Label {
-                x: Theme.horizontalPageMargin
-                width: parent.width - 2 * x
-                text: chat.providerEndpoint
-                textFormat: Text.PlainText
-                visible: text.length > 0
-                wrapMode: Text.WrapAnywhere
-                color: Theme.secondaryColor
-                font.pixelSize: Theme.fontSizeSmall
-            }
-            Item { width: 1; height: Theme.paddingMedium }
-        }
+        header: PageHeader { title: "Chat history" }
         PullDownMenu {
             MenuItem { text: "Home"; enabled: !chat.busy && !vault.busy; onClicked: app.showProviders() }
             MenuItem {

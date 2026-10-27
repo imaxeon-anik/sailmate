@@ -6,4 +6,4 @@ TEMPLATE = app
 TARGET = tst_chatcontroller
 INCLUDEPATH += ../../src
 SOURCES += tst_chatcontroller.cpp ../../src/chatcontroller.cpp
-HEADERS += ../../src/chatcontroller.h
+HEADERS += ../../src/chatcontroller.h ../../src/appsettings.h

@@ -5,7 +5,7 @@ QT += core gui qml quick network sql
 PKGCONFIG += sailfishapp sailfishsecrets
 target.path = /usr/bin
 SOURCES += src/main.cpp src/chatcontroller.cpp src/credentialstore.cpp
-HEADERS += src/chatcontroller.h src/credentialstore.h src/providerprofile.h
+HEADERS += src/chatcontroller.h src/credentialstore.h src/providerprofile.h src/appsettings.h
 
 DISTFILES += qml/sailmate.qml qml/pages/*.qml rpm/harbour-sailmate.spec
 

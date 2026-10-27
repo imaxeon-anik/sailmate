@@ -1,4 +1,5 @@
 #include "chatcontroller.h"
+#include "appsettings.h"
 #include "providerprofile.h"
 #include <QSettings>
 
@@ -94,7 +95,7 @@ ChatController::ChatController(QObject *parent)
       m_sawDone(false), m_sawFinish(false), m_messageStarted(false),
       m_messageDelta(false), m_assistantIndex(-1), m_receivedBytes(0)
 {
-    const QVariantList stored = QSettings().value(QStringLiteral("providers/custom")).toList();
+    const QVariantList stored = QSettings(settingsFile(), QSettings::IniFormat).value(QStringLiteral("providers/custom")).toList();
     for (const QVariant &value : stored) {
         const QVariantMap profile = value.toMap();
         const QString id = profile.value(QStringLiteral("id")).toString();
@@ -178,7 +179,7 @@ QString ChatController::createCustomProfile(QString name, QString baseUrl, QStri
     profile.insert(QStringLiteral("model"), model);
     QVariantList profiles = m_customProfiles;
     profiles.append(profile);
-    QSettings settings;
+    QSettings settings(settingsFile(), QSettings::IniFormat);
     settings.setValue(QStringLiteral("providers/custom"), profiles);
     settings.sync();
     if (settings.status() != QSettings::NoError) {
@@ -247,7 +248,7 @@ bool ChatController::deleteCustomProfile(QString provider)
         setError(tr("Could not delete the profile's chats. The profile was kept; retry deletion."));
         return false;
     }
-    QSettings settings;
+    QSettings settings(settingsFile(), QSettings::IniFormat);
     settings.setValue(QStringLiteral("providers/custom"), profiles);
     settings.sync();
     if (settings.status() != QSettings::NoError) {

@@ -23,6 +23,24 @@ Page {
     SilicaFlickable {
         anchors.fill: parent
         contentHeight: column.height
+        PullDownMenu {
+            MenuItem {
+                text: "Help"
+                enabled: !chat.busy && !vault.busy
+                onClicked: pageStack.push(Qt.resolvedUrl("HelpPage.qml"), { topic: "key" })
+            }
+            MenuItem {
+                text: "Recover saved key"
+                enabled: !chat.busy && !vault.busy
+                onClicked: {
+                    recoveryNotice.text = ""
+                    chat.clearError()
+                    keyField.focus = false
+                    page.loading = true
+                    vault.loadKey(page.providerId)
+                }
+            }
+        }
         Column {
             id: column
             width: parent.width
@@ -59,18 +77,9 @@ Page {
             Label {
                 x: Theme.horizontalPageMargin
                 width: parent.width - 2 * x
-                text: page.manualModel
-                      ? "Enter your API key. Save and continue stores it using Sailfish Secrets without validation. The manual model skips /models: authentication, billing and model access are not verified until you send a chat request."
-                      : "Enter your API key. It will be stored using Sailfish Secrets, not in your chat history. Validation checks access to the model list; chat availability also depends on billing and model permissions."
-                wrapMode: Text.Wrap
-                font.pixelSize: Theme.fontSizeSmall
-                color: Theme.secondaryColor
-            }
-            Label {
-                x: Theme.horizontalPageMargin
-                width: parent.width - 2 * x
-                visible: page.baseUrl.length > 0
-                text: "Your key and conversation will be sent to this URL. Check the endpoint before continuing. To change it, create a separate profile; keys and history are not reused."
+                    text: page.baseUrl.length > 0
+                        ? "Your key and messages are sent to this endpoint."
+                        : "Your key and messages are sent to this provider."
                 wrapMode: Text.Wrap
                 color: Theme.secondaryColor
                 font.pixelSize: Theme.fontSizeSmall
@@ -85,22 +94,20 @@ Page {
                 EnterKey.iconSource: "image://theme/icon-m-enter-accept"
                 EnterKey.onClicked: page.submitKey()
             }
+            Label {
+                x: Theme.horizontalPageMargin
+                width: parent.width - 2 * x
+                visible: page.manualModel.length > 0
+                text: "Saves your key without verifying access."
+                wrapMode: Text.Wrap
+                color: Theme.highlightColor
+                font.pixelSize: Theme.fontSizeSmall
+            }
             Button {
                 anchors.horizontalCenter: parent.horizontalCenter
                 text: page.manualModel ? "Save and continue" : "Connect"
                 enabled: keyField.text.trim().length > 0 && !chat.busy && !vault.busy
                 onClicked: page.submitKey()
-            }
-            Button {
-                anchors.horizontalCenter: parent.horizontalCenter
-                text: "Recover saved key"
-                enabled: !chat.busy && !vault.busy
-                onClicked: {
-                    recoveryNotice.text = ""
-                    chat.clearError()
-                    page.loading = true
-                    vault.loadKey(page.providerId)
-                }
             }
             Button {
                 anchors.horizontalCenter: parent.horizontalCenter

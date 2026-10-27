@@ -40,6 +40,10 @@ agent tools, individual chat deletion/export and token-cost reporting are not im
 Choose **Custom** in the provider picker, then pull down **Add profile**. Give each profile
 an identifiable name and an HTTPS base URL, including `/v1` if the service requires it.
 The list shows all saved profiles, or "No custom profiles" with a pull-down hint when empty.
+Rows show the name and URL, with "API key required" only when no key is recorded. The delete
+icon remains available. The Custom history pulley menu's **Status** action shows the profile's
+credential record, model configuration and current session state without loading keys or making
+network requests. Recorded credentials and loaded models do not guarantee chat access or billing.
 Selecting a profile opens its local chat history without loading a key or contacting the endpoint.
 Opening or starting a Custom chat is local and does not load credentials or contact the endpoint.
 Use **Connect** on the chat page before sending. It checks Sailfish Secrets directly, including

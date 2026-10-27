@@ -72,15 +72,8 @@ Page {
                 }
                 Label {
                     width: parent.width
-                    text: modelData.model ? "Manual model: " + modelData.model : "Models discovered when connecting"
-                    textFormat: Text.PlainText
-                    wrapMode: Text.Wrap
-                    color: Theme.secondaryColor
-                    font.pixelSize: Theme.fontSizeSmall
-                }
-                Label {
-                    width: parent.width
-                    text: profileItem.saved ? "Key saved" : "No saved key"
+                    visible: !profileItem.saved
+                    text: "API key required"
                     wrapMode: Text.Wrap
                     color: Theme.secondaryColor
                     font.pixelSize: Theme.fontSizeSmall

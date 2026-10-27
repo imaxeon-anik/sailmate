@@ -1,4 +1,5 @@
 #include "credentialstore.h"
+#include "appsettings.h"
 #include "providerprofile.h"
 #include <QSettings>
 #include <Sailfish/Secrets/storesecretrequest.h>
@@ -18,7 +19,7 @@ Secret::Identifier identifier(const QString &provider)
 CredentialStore::CredentialStore(QObject *parent)
     : QObject(parent), m_manager(this), m_busy(false)
 {
-    const QStringList known = QSettings().value(QStringLiteral("credentials/providers")).toStringList();
+    const QStringList known = QSettings(settingsFile(), QSettings::IniFormat).value(QStringLiteral("credentials/providers")).toStringList();
     for (const QString &provider : known) {
         if (isProviderId(provider) && !m_saved.contains(provider))
             m_saved.append(provider);
@@ -55,7 +56,7 @@ bool CredentialStore::remember(const QString &provider, bool saved)
     else if (!saved)
         m_saved.removeAll(provider);
     // This index contains provider names only, never credentials.
-    QSettings settings;
+    QSettings settings(settingsFile(), QSettings::IniFormat);
     settings.setValue(QStringLiteral("credentials/providers"), m_saved);
     settings.sync();
     emit savedProvidersChanged();

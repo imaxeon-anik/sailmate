@@ -5,6 +5,7 @@
 #include <QUuid>
 #include <QSettings>
 #include <QTemporaryDir>
+#include "appsettings.h"
 #include "providerprofile.h"
 #include "chatcontroller.h"
 
@@ -73,11 +74,11 @@ private slots:
     void initTestCase()
     {
         QVERIFY(settingsDirectory.isValid());
+        qputenv("XDG_CONFIG_HOME", settingsDirectory.path().toUtf8());
         QCoreApplication::setOrganizationName(QStringLiteral("SailmateTests"));
-        QSettings::setDefaultFormat(QSettings::IniFormat);
-        QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, settingsDirectory.path());
+        QCoreApplication::setApplicationName(QStringLiteral("Sailmate"));
     }
-    void init() { QSettings().clear(); }
+    void init() { QSettings(settingsFile(), QSettings::IniFormat).clear(); }
     void customProfilesAndRequests()
     {
         ChatController controller;
@@ -102,7 +103,10 @@ private slots:
         QCOMPARE(chat.rawHeader("Authorization"), QByteArray("Bearer other-key"));
         QCOMPARE(restored.apiRequest("openai", "key", false).url().toString(), QStringLiteral("https://api.openai.com/v1/models"));
         QCOMPARE(restored.apiRequest("anthropic", "key", true).rawHeader("x-api-key"), QByteArray("key"));
-        QVERIFY(!QSettings().value("providers/custom").toString().contains("fake-key"));
+        QVERIFY(!QSettings(settingsFile(), QSettings::IniFormat).value("providers/custom").toString().contains("fake-key"));
+        QCOMPARE(QFileInfo(settingsFile()).absolutePath(),
+                 QDir(settingsDirectory.path()).absoluteFilePath(QStringLiteral("SailmateTests/Sailmate")));
+        QVERIFY(QFile::exists(settingsFile()));
         restored.m_requestProvider = id;
         QCOMPARE(restored.parseModels("{\"data\":[{\"id\":\"vendor/model\"},{\"id\":\"custom-model\"}]}"),
                  QStringList() << QStringLiteral("custom-model") << QStringLiteral("vendor/model"));

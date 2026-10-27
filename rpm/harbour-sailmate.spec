@@ -1,6 +1,6 @@
 Name: harbour-sailmate
 Version: 0.1.0
-Release: 4
+Release: 5
 Summary: Native multi-provider AI chat for Sailfish OS
 License: LicenseRef-Proprietary
 URL: https://github.com/imaxeon-anik/sailmate

@@ -43,6 +43,12 @@ Page {
         PullDownMenu {
             MenuItem { text: "Home"; enabled: !chat.busy && !vault.busy; onClicked: app.showProviders() }
             MenuItem {
+                text: "Status"
+                visible: chat.provider.indexOf("custom-") === 0
+                enabled: !chat.busy && !vault.busy
+                onClicked: pageStack.push(Qt.resolvedUrl("ProviderStatusPage.qml"), { providerId: chat.provider })
+            }
+            MenuItem {
                 text: "Start new chat"
                 enabled: !chat.busy && !vault.busy
                 onClicked: {

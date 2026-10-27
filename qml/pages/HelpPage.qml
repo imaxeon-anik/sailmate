@@ -48,6 +48,14 @@ Page {
                     }
                 }
             }
+            Label {
+                x: Theme.horizontalPageMargin
+                width: parent.width - 2 * x
+                text: "Sailmate " + Qt.application.version
+                textFormat: Text.PlainText
+                color: Theme.secondaryColor
+                font.pixelSize: Theme.fontSizeSmall
+            }
             Item { width: 1; height: Theme.paddingLarge }
         }
 

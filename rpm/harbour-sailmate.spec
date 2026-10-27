@@ -1,6 +1,6 @@
 Name: harbour-sailmate
 Version: 0.1.0
-Release: 5
+Release: 6
 Summary: Native multi-provider AI chat for Sailfish OS
 License: LicenseRef-Proprietary
 URL: https://github.com/imaxeon-anik/sailmate
@@ -22,7 +22,7 @@ Sailmate connects directly to OpenAI and Anthropic using your own API keys.
 %setup -q -n %{name}-%{version}
 
 %build
-%qmake5 sailmate.pro
+%qmake5 sailmate.pro APP_VERSION=%{version}-%{release}
 %make_build
 
 %install

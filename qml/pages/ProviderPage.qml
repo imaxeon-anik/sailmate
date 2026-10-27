@@ -30,7 +30,7 @@ Page {
                 wrapMode: Text.Wrap
             }
             Repeater {
-                model: [ { providerId: "openai", title: "OpenAI", detail: "API key required. ChatGPT subscriptions do not include API usage." },
+                model: [ { providerId: "openai", title: "OpenAI", detail: "API key required." },
                          { providerId: "anthropic", title: "Anthropic · Claude", detail: "An Anthropic API key and API billing are required." } ]
                 delegate: BackgroundItem {
                     id: providerItem

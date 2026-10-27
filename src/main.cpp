@@ -11,7 +11,7 @@ int main(int argc, char *argv[])
     std::unique_ptr<QGuiApplication> app(SailfishApp::application(argc, argv));
     app->setOrganizationName(QStringLiteral("io.github.imaxeon-anik"));
     app->setApplicationName(QStringLiteral("Sailmate"));
-    app->setApplicationVersion(QStringLiteral("0.1.0"));
+    app->setApplicationVersion(QStringLiteral(APP_VERSION));
     ChatController chat;
     CredentialStore vault;
     std::unique_ptr<QQuickView> view(SailfishApp::createView());

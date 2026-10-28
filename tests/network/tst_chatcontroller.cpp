@@ -8,6 +8,11 @@
 #include "appsettings.h"
 #include "providerprofile.h"
 #include "chatcontroller.h"
+#include "chatimage.h"
+#include <QImage>
+#include <QJsonArray>
+#include <QJsonObject>
+#include <QUrl>
 
 class FakeReply : public QNetworkReply
 {
@@ -79,6 +84,78 @@ private slots:
         QCoreApplication::setApplicationName(QStringLiteral("Sailmate"));
     }
     void init() { QSettings(settingsFile(), QSettings::IniFormat).clear(); }
+    void imagePreparationAndPayloads()
+    {
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        const QString path = directory.filePath("photo #1.png");
+        QImage image(2000, 1000, QImage::Format_ARGB32);
+        image.fill(Qt::transparent);
+        image.setText("Private metadata", "must not be sent");
+        QVERIFY(image.save(path, "PNG"));
+        const QString prepared = ChatImage::prepare(QUrl::fromLocalFile(path).toString());
+        QVERIFY(ChatImage::valid(prepared));
+        const QByteArray bytes = QByteArray::fromBase64(prepared.section(',', 1).toLatin1());
+        const QImage normalized = QImage::fromData(bytes, "JPEG");
+        QCOMPARE(normalized.size(), QSize(1600, 800));
+        QVERIFY(normalized.textKeys().isEmpty());
+        QVERIFY(qRed(normalized.pixel(0, 0)) > 240);
+        QVERIFY(ChatImage::valid(ChatImage::prepare(path)));
+        QVERIFY(ChatImage::prepare("https://example.invalid/photo.jpg").isEmpty());
+        QVERIFY(ChatImage::prepare("file:///nonexistent.jpg").isEmpty());
+        QVERIFY(!ChatImage::valid("data:image/jpeg;base64,/9j/2Q=="));
+        QVERIFY(!ChatImage::valid(prepared + "!"));
+        QVariantMap user = entry("user", "Describe this", "complete");
+        QCOMPARE(ChatImage::requestMessage(user, false).value("content").toString(), QStringLiteral("Describe this"));
+        user.insert("image", prepared);
+        const QJsonArray openai = ChatImage::requestMessage(user, false).value("content").toArray();
+        QCOMPARE(openai.size(), 2);
+        QCOMPARE(openai.at(1).toObject().value("type").toString(), QStringLiteral("image_url"));
+        QCOMPARE(openai.at(1).toObject().value("image_url").toObject().value("url").toString(), prepared);
+        const QJsonArray anthropic = ChatImage::requestMessage(user, true).value("content").toArray();
+        const QJsonObject source = anthropic.at(1).toObject().value("source").toObject();
+        QCOMPARE(source.value("type").toString(), QStringLiteral("base64"));
+        QCOMPARE(source.value("media_type").toString(), QStringLiteral("image/jpeg"));
+        QCOMPARE(source.value("data").toString(), prepared.section(',', 1));
+    }
+    void imageHistoryMigrationAndIsolation()
+    {
+        QTemporaryDir directory;
+        const QString path = directory.filePath("small.png");
+        QImage image(40, 20, QImage::Format_RGB32);
+        image.fill(Qt::red);
+        QVERIFY(image.save(path, "PNG"));
+        const QString prepared = ChatImage::prepare(path);
+        QVERIFY(ChatImage::valid(prepared));
+        ChatController controller;
+        database(controller);
+        const QString first = controller.createCustomProfile("Images", "https://images.invalid/v1", "model");
+        const QString second = controller.createCustomProfile("Other", "https://other.invalid/v1", "model");
+        controller.activateProvider(first, "fake-key");
+        QVariantMap user = entry("user", "Photo", "complete");
+        user.insert("image", prepared);
+        controller.m_messages << user << entry("assistant", "A red image", "complete");
+        QVERIFY(controller.saveConversation());
+        const QString conversation = controller.m_conversationId;
+        controller.newChat();
+        controller.openConversation(conversation);
+        QCOMPARE(controller.messages().first().toMap().value("image").toString(), prepared);
+        controller.activateProvider(second, "other-key");
+        controller.openConversation(conversation);
+        QVERIFY(!controller.error().isEmpty());
+        QVERIFY(controller.messages().isEmpty());
+        controller.activateProvider(first, "fake-key");
+        controller.attachImage(path);
+        QTRY_VERIFY(!controller.imageBusy());
+        QVERIFY(!controller.pendingImage().isEmpty());
+        controller.removeImage();
+        QVERIFY(controller.pendingImage().isEmpty());
+        QVERIFY(controller.deleteCustomProfile(first));
+        QSqlQuery query(controller.m_database);
+        QVERIFY(query.exec("SELECT COUNT(*) FROM messages"));
+        QVERIFY(query.next());
+        QCOMPARE(query.value(0).toInt(), 0);
+    }
     void customProfilesAndRequests()
     {
         ChatController controller;

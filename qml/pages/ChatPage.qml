@@ -31,7 +31,7 @@ Page {
     }
 
     allowedOrientations: Orientation.All
-    backNavigation: !chat.busy && !vault.busy && !chat.unsaved
+    backNavigation: !chat.busy && !vault.busy && !chat.unsaved && !chat.imageBusy
     SilicaListView {
         id: messages
         anchors { top: parent.top; left: parent.left; right: parent.right; bottom: composer.top }
@@ -72,6 +72,7 @@ Page {
             Item { width: 1; height: Theme.paddingMedium }
         }
         PullDownMenu {
+            enabled: !chat.imageBusy
             MenuItem { text: "Home"; enabled: !chat.busy && !vault.busy && !chat.unsaved; onClicked: app.showProviders() }
             MenuItem { text: "Change model"; enabled: !chat.busy && !vault.busy && !chat.unsaved && chat.models.length > 0; onClicked: pageStack.push(Qt.resolvedUrl("ModelPage.qml")) }
             MenuItem { text: "Start new chat"; enabled: !chat.busy && !vault.busy && !chat.unsaved; onClicked: chat.newChat() }
@@ -114,6 +115,17 @@ Page {
                     textFormat: Text.PlainText
                     horizontalAlignment: Text.AlignLeft
                     wrapMode: Text.Wrap
+                }
+                Image {
+                    width: parent.width
+                    height: visible ? Theme.itemSizeLarge * 2 : 0
+                    visible: !!modelData.image
+                    source: modelData.image || ""
+                    sourceSize.width: 640
+                    sourceSize.height: 640
+                    fillMode: Image.PreserveAspectFit
+                    asynchronous: true
+                    cache: false
                 }
                 Label {
                     width: parent.width
@@ -158,6 +170,42 @@ Page {
         id: composer
         anchors { left: parent.left; right: parent.right; bottom: parent.bottom }
         spacing: Theme.paddingSmall
+        Item {
+            width: parent.width
+            height: visible ? Theme.itemSizeLarge : 0
+            visible: chat.pendingImage.length > 0 || chat.imageBusy
+            Image {
+                anchors { left: parent.left; leftMargin: Theme.horizontalPageMargin }
+                width: Theme.itemSizeLarge
+                height: parent.height
+                source: chat.pendingImage
+                sourceSize.width: 200
+                sourceSize.height: 200
+                fillMode: Image.PreserveAspectFit
+                cache: false
+            }
+            BusyIndicator {
+                anchors.centerIn: parent
+                running: chat.imageBusy
+                visible: running
+            }
+            IconButton {
+                anchors { right: parent.right; rightMargin: Theme.horizontalPageMargin; verticalCenter: parent.verticalCenter }
+                icon.source: "image://theme/icon-m-clear"
+                Accessible.name: "Remove photo"
+                enabled: !chat.imageBusy && !chat.busy && !vault.busy
+                onClicked: chat.removeImage()
+            }
+        }
+        Label {
+            x: Theme.horizontalPageMargin
+            width: parent.width - 2 * x
+            visible: chat.pendingImage.length > 0
+            text: "Requires an image-capable model. The photo is sent to this provider and saved with this chat."
+            wrapMode: Text.Wrap
+            color: Theme.secondaryColor
+            font.pixelSize: Theme.fontSizeSmall
+        }
         Label {
             x: Theme.horizontalPageMargin
             width: parent.width - 2 * x
@@ -187,9 +235,23 @@ Page {
         Item {
             width: parent.width
             height: Math.max(input.height, sendButton.height)
+            IconButton {
+                id: attachButton
+                anchors.left: parent.left
+                anchors.bottom: parent.bottom
+                width: Theme.itemSizeSmall
+                height: Theme.itemSizeSmall
+                icon.source: "image://theme/icon-m-attach"
+                Accessible.name: "Attach photo"
+                enabled: !chat.busy && !vault.busy && !chat.unsaved && !chat.imageBusy
+                onClicked: {
+                    input.focus = false
+                    pageStack.push(Qt.resolvedUrl("AttachImagePage.qml"))
+                }
+            }
             TextArea {
                 id: input
-                anchors.left: parent.left
+                anchors.left: attachButton.right
                 anchors.right: sendButton.left
                 height: Math.min(implicitHeight, page.height * 0.3)
                 placeholderText: "Message"
@@ -206,7 +268,7 @@ Page {
                 height: Theme.itemSizeSmall
                 icon.source: chat.busy ? "image://theme/icon-m-cancel" : "image://theme/icon-m-send"
                 Accessible.name: chat.busy ? "Cancel response" : "Send message"
-                enabled: !vault.busy && (chat.busy || (!chat.unsaved && chat.connected && page.modelAvailable && input.text.trim().length > 0))
+                enabled: !chat.imageBusy && !vault.busy && (chat.busy || (!chat.unsaved && chat.connected && page.modelAvailable && input.text.trim().length > 0))
                 onClicked: {
                     if (vault.busy) return
                     if (chat.busy) chat.cancel()
@@ -223,7 +285,7 @@ Page {
             anchors.horizontalCenter: parent.horizontalCenter
             text: "Connect"
             visible: !chat.connected && !chat.busy && !chat.unsaved
-            enabled: !vault.busy
+            enabled: !vault.busy && !chat.imageBusy
             onClicked: page.connectSavedKey()
         }
         BusyIndicator {
@@ -236,7 +298,7 @@ Page {
             anchors.horizontalCenter: parent.horizontalCenter
             text: chat.unsaved ? "Retry save" : "Retry"
             visible: (chat.unsaved || chat.error.length > 0) && !chat.busy
-            enabled: !chat.busy && !vault.busy
+            enabled: !chat.busy && !vault.busy && !chat.imageBusy && !chat.pendingImage.length
             onClicked: chat.retry()
         }
         Button {

@@ -10,6 +10,7 @@
 #include <QStringList>
 #include <QTimer>
 #include <QVariantList>
+#include <QFutureWatcher>
 
 class QNetworkReply;
 class ChatControllerTest;
@@ -30,6 +31,8 @@ class ChatController : public QObject
     Q_PROPERTY(bool unsaved READ unsaved NOTIFY unsavedChanged)
     Q_PROPERTY(bool connected READ connected NOTIFY modelsChanged)
     Q_PROPERTY(QString error READ error NOTIFY errorChanged)
+    Q_PROPERTY(QString pendingImage READ pendingImage NOTIFY pendingImageChanged)
+    Q_PROPERTY(bool imageBusy READ imageBusy NOTIFY pendingImageChanged)
 public:
     explicit ChatController(QObject *parent = 0);
     ~ChatController();
@@ -48,6 +51,10 @@ public:
     Q_INVOKABLE void discardUnsavedConversation();
     Q_INVOKABLE void connectProvider(QString key);
     QString error() const { return m_error; }
+    QString pendingImage() const { return m_pendingImage; }
+    bool imageBusy() const { return m_imageProcessing; }
+    Q_INVOKABLE void attachImage(QString fileUrl);
+    Q_INVOKABLE void removeImage();
 
     QString providerTitle() const;
     QString providerEndpoint() const;
@@ -76,6 +83,7 @@ signals:
     void busyChanged();
     void unsavedChanged();
     void errorChanged();
+    void pendingImageChanged();
     void keyValidated(QString provider, QString key);
     void requestFinished(bool success);
 
@@ -109,6 +117,7 @@ private:
     void appendAssistant(const QString &text);
     bool ensureDatabase();
     bool saveConversation();
+    bool ensureImageSchema();
     void refreshConversations();
 
     QNetworkAccessManager m_network;
@@ -145,6 +154,10 @@ private:
     qint64 m_receivedBytes;
     QString m_databaseConnection;
     QSqlDatabase m_database;
+    QString m_pendingImage;
+    bool m_imageProcessing = false;
+    QFutureWatcher<QString> m_imageWatcher;
+    bool m_imageSchemaReady = false;
 };
 
 #endif

@@ -19,7 +19,53 @@ body{padding:28px;font-family:'Helvetica Neue',sans-serif;letter-spacing:0}
 .preview-nav{display:flex;gap:20px;flex-wrap:wrap;margin:24px 0}.preview-nav a,details summary{color:#72d3d8}.latest section{scroll-margin-top:20px}
 details{border-top:1px solid #406073;padding-top:20px}details summary{cursor:pointer}#model-search{margin-top:0!important}#model-search>p{display:none}
 @media(max-width:600px){body{padding:18px}.latest{grid-template-columns:minmax(0,1fr)}h1{font-size:26px}.latest .phone{height:680px}}
+.photo-tools{display:flex;align-items:center;gap:12px}.photo-tools button,.photo-draft button{background:transparent;border:0;color:#b9e5ea;font:28px 'Helvetica Neue',sans-serif;width:44px;height:44px;flex:0 0 44px;cursor:pointer}.photo-tools button:disabled{opacity:.3;cursor:default}.photo-tools textarea{resize:none;width:100%;min-width:0;height:72px;padding:12px 0;background:transparent;border:0;border-bottom:1px solid #63adb9;color:#edf6fa;font:17px 'Helvetica Neue',sans-serif}.photo-draft{display:flex;justify-content:space-between;align-items:center;height:96px}.photo-draft img{width:90px;height:90px;object-fit:contain}.photo-draft[hidden],.photo-note[hidden]{display:none}.sent-photo{display:block;width:100%;height:170px;object-fit:contain;margin-top:12px}.photo-demo .phone{max-width:420px}.photo-demo{grid-template-columns:repeat(2,minmax(0,420px))}.photo-demo .bottom{padding-top:12px}.photo-demo .user-message{overflow-wrap:anywhere}@media(max-width:650px){.photo-demo{grid-template-columns:minmax(0,1fr)}}
 </style></head><body>
+<section id="photo-attachments">
+<h1>Photo attachments · UI preview</h1>
+<p class="muted">Illustrative Silica-style layouts, not native screenshots. The Sailmate icon is the sample photo. Attach, remove and simulated Send work locally; no image is uploaded and no AI request is made. The native app opens the Sailfish photo picker.</p>
+<div class="latest photo-demo">
+<section class="screen"><h2>01 / Draft · photo attached</h2><div class="phone"><div class="status"><span class="page-dots">‹ · · ·</span><span>09:41</span></div><div class="header">Sailmate</div><div class="sub">OpenAI<br>gpt-4.1-mini</div><div class="content" id="photo-thread"><div class="empty"><strong>Start a conversation</strong></div></div><div class="bottom"><div class="photo-draft" id="photo-draft"><img src="../icons/172x172/harbour-sailmate.png" alt="Attached sample: Sailmate icon"><button type="button" id="remove-photo" title="Remove photo" aria-label="Remove photo">×</button></div><p class="muted photo-note" id="photo-note">Requires an image-capable model. The photo is sent to this provider and saved with this chat.</p><div class="photo-tools"><button type="button" id="attach-photo" title="Attach sample photo" aria-label="Attach sample photo">📎</button><textarea id="photo-caption" aria-label="Message" placeholder="Message">Describe this app icon.</textarea><button type="button" id="send-photo" title="Simulate sending message" aria-label="Simulate sending message">➤</button></div></div></div></section>
+<section class="screen"><h2>02 / Saved chat · image retained</h2><div class="phone"><div class="status"><span class="page-dots">‹ · · ·</span><span>09:41</span></div><div class="header">Sailmate</div><div class="sub">OpenAI<br>gpt-4.1-mini</div><div class="content"><div class="user-message"><div class="role">You</div><div class="message">Describe this app icon.</div><img class="sent-photo" src="../icons/172x172/harbour-sailmate.png" alt="Sailmate icon attached to saved message"></div><div class="role">Sailmate</div><div class="message">Two contrasting profiles face each other on a dark background, suggesting a conversation.</div></div><div class="bottom"><div class="photo-tools"><button type="button" title="Attach sample photo in draft" aria-label="Go to photo draft" onclick="document.getElementById('attach-photo').click();document.getElementById('photo-caption').focus()">📎</button><textarea aria-label="Saved chat message illustration" placeholder="Message" readonly></textarea><button type="button" disabled aria-label="Send unavailable in static illustration">➤</button></div></div></div></section>
+</div>
+</section>
+<script>
+const photoDraft = document.getElementById('photo-draft');
+const photoNote = document.getElementById('photo-note');
+const photoCaption = document.getElementById('photo-caption');
+const photoSend = document.getElementById('send-photo');
+function setPhotoAttached(attached) {
+	photoDraft.hidden = !attached;
+	photoNote.hidden = !attached;
+}
+document.getElementById('attach-photo').onclick = () => setPhotoAttached(true);
+document.getElementById('remove-photo').onclick = () => setPhotoAttached(false);
+photoCaption.oninput = () => { photoSend.disabled = !photoCaption.value.trim(); };
+photoSend.onclick = () => {
+	if (!photoCaption.value.trim()) return;
+	const row = document.createElement('div');
+	row.className = 'user-message';
+	const role = document.createElement('div');
+	role.className = 'role';
+	role.textContent = 'You';
+	const text = document.createElement('div');
+	text.className = 'message';
+	text.textContent = photoCaption.value;
+	row.append(role, text);
+	if (!photoDraft.hidden) {
+		const image = photoDraft.querySelector('img').cloneNode();
+		image.className = 'sent-photo';
+		row.appendChild(image);
+	}
+	const thread = document.getElementById('photo-thread');
+	thread.querySelector('.empty')?.remove();
+	thread.appendChild(row);
+	thread.scrollTop = thread.scrollHeight;
+	photoCaption.value = '';
+	photoSend.disabled = true;
+	setPhotoAttached(false);
+};
+</script>
 <div class="latest-title"><img src="../icons/128x128/harbour-sailmate.png" alt="Sailmate icon"><div><h1>Sailmate · Silica-style screens</h1><span class="muted">Current feature branch · 0.1.0-4</span></div></div>
 <p><strong>Illustrative previews, not native screenshots.</strong> Layouts reflect the current QML. Fonts, Ambience, gestures and keyboard behaviour require Sailfish device testing. All conversations and endpoints below are samples; no credentials or API requests are used.</p>
 <nav class="preview-nav"><a href="#latest-home">Home</a><a href="#latest-custom">Custom providers</a><a href="#latest-history">History</a><a href="#latest-chat">Chat</a><a href="#model-search">Model search</a><a href="#latest-delete">Confirmations</a></nav>

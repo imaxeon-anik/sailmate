@@ -12,6 +12,7 @@ BuildRequires: pkgconfig(Qt5Qml)
 BuildRequires: pkgconfig(Qt5Quick)
 BuildRequires: pkgconfig(Qt5Network)
 BuildRequires: pkgconfig(Qt5Sql)
+BuildRequires: pkgconfig(Qt5Concurrent)
 Requires: sailfishsilica-qt5 >= 0.10.9
 Requires: qt5-plugin-sqldriver-sqlite
 

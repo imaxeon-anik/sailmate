@@ -1,5 +1,5 @@
 # Sailmate fix-it list
 
-- [x] **Search in Change model:** Add a search field to filter the available models by name or model ID.
-- [x] **Rename Change provider to Home:** Use **Home** for the navigation action that returns to the OpenAI / Anthropic / Custom selection screen.
-- [x] **Return home from Chat history:** The Home pulley action and native Sailfish swipe-back return to provider selection, including for Custom profiles. The page stack is Home → Chat history → Chat; returning home does not delete history or transmit it to another endpoint. Device gesture validation is still pending.
+- [ ] **Delete chats:** Add the ability to delete individual chat threads.
+- [ ] **Last-used time:** Show each chat's last-used time in hh:mm format on the right side of its history row, using a smaller font.
+- [ ] **Help version placement:** Display the app version number immediately below the Help heading.

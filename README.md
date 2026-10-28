@@ -32,8 +32,32 @@ OpenAI, Anthropic or the selected custom endpoint. Text conversation history is 
 directory; do not treat it as an encrypted vault. Messages may remain with the provider under
 its retention policies. No analytics, tool execution, built-in third-party gateway or automatic retries.
 
-Responses currently display as plain text, not rendered Markdown. File attachments, MCP,
+Responses currently display as plain text, not rendered Markdown. General file attachments, MCP,
 agent tools, individual chat deletion/export and token-cost reporting are not implemented.
+
+## Photo attachments
+
+The chat composer offers **Attach photo** using the native Sailfish image picker. Attach one
+JPEG or PNG per message, add a text caption, and remove or replace the preview before sending.
+The selected model and endpoint must support image input; model discovery does not establish
+that capability. OpenAI and Custom requests use image_url blocks; Anthropic uses base64 image
+source blocks. Unsupported requests show an error rather than silently dropping the image.
+
+Images are processed off the UI thread, limited to 10 MiB and 20 megapixels at input, resized
+to at most 1600 pixels per side, and re-encoded as JPEG without source metadata. Transparency
+is flattened on white. Encoded image data is limited to 1,400,000 characters per image and
+8 MiB across the conversation sent to a provider. Text-only conversations retain their format.
+
+Successful turns save the processed image in the local SQLite history, so reopening and
+continuing a chat includes its photos even if the original file is removed. The image column
+is added without replacing existing tables or changing settings/credential storage. Photos are
+stored unencrypted like chat text and are sent again as context when continuing the chat.
+Failed turns retain their image for explicit retry; provider switching clears pending photos.
+The Pictures Sailjail permission is required. GIF, HEIC, camera capture and multiple photos
+in a single message are not supported in this first version.
+
+Native picker behavior, Qt image plugins, and real provider image requests still require
+SDK compilation and device testing. No photos are sent merely by selecting them.
 
 ## Custom OpenAI-compatible profiles
 

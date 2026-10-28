@@ -1,4 +1,7 @@
 #include "chatcontroller.h"
+#include "chatimage.h"
+#include <QtConcurrent/QtConcurrentRun>
+#include <QSqlRecord>
 #include "appsettings.h"
 #include "providerprofile.h"
 #include <QSettings>
@@ -108,6 +111,17 @@ ChatController::ChatController(QObject *parent)
             m_customProfiles.append(profile);
     }
     m_timeout.setSingleShot(true);
+    connect(&m_imageWatcher, &QFutureWatcher<QString>::finished, this, [this]() {
+        const QString image = m_imageWatcher.result();
+        m_imageProcessing = false;
+        if (image.isEmpty())
+            setError(tr("Choose a readable JPEG or PNG up to 10 MiB and 20 megapixels. The resized image must fit within 1 MiB."));
+        else {
+            m_pendingImage = image;
+            clearError();
+        }
+        emit pendingImageChanged();
+    });
     connect(&m_timeout, &QTimer::timeout, this, [this]() {
         stopRequest(tr("The request timed out. You can retry manually."));
     });
@@ -300,6 +314,10 @@ void ChatController::setBusy(bool busy)
 
 bool ChatController::idle()
 {
+    if (imageBusy()) {
+        setError(tr("Wait for the image to finish processing."));
+        return false;
+    }
     if (!m_busy)
         return true;
     setError(tr("Wait for the current request to finish or cancel it first."));
@@ -468,6 +486,10 @@ void ChatController::finishReply()
         failure = tr("The provider rejected access. Check the API key and permissions.");
     else if (status == 429)
         failure = tr("The provider rate limit or quota was reached. Check billing and retry later.");
+    else if (status == 413)
+        failure = tr("The provider rejected the request size. Start a new chat or use a smaller photo.");
+    else if ((status == 400 || status == 415 || status == 422) && m_operation == Chat)
+        failure = tr("The provider rejected the message format. If this chat contains photos, select an image-capable model and an endpoint that accepts images.");
     else if (status == 0)
         failure = tr("The network request failed. Check your connection.");
     else if (status < 200 || status >= 300)
@@ -584,6 +606,8 @@ void ChatController::setModel(QString model)
 
 void ChatController::resetChat()
 {
+    m_pendingImage.clear();
+    emit pendingImageChanged();
     m_messages.clear();
     m_conversationId.clear();
     m_title.clear();
@@ -624,6 +648,23 @@ void ChatController::forgetProvider(QString provider)
     clearError();
 }
 
+void ChatController::attachImage(QString fileUrl)
+{
+    if (!idle() || !canReplaceConversation() || m_provider.isEmpty())
+        return;
+    m_imageProcessing = true;
+    m_imageWatcher.setFuture(QtConcurrent::run(ChatImage::prepare, fileUrl));
+    emit pendingImageChanged();
+}
+
+void ChatController::removeImage()
+{
+    if (!idle() || !canReplaceConversation())
+        return;
+    m_pendingImage.clear();
+    emit pendingImageChanged();
+}
+
 void ChatController::sendMessage(QString text)
 {
     if (idle())
@@ -656,7 +697,16 @@ void ChatController::retry()
 
 bool ChatController::startChat(const QString &text, bool retrying)
 {
-    Q_UNUSED(retrying);
+    QString image = m_pendingImage;
+    if (retrying) {
+        for (int index = m_messages.size() - 1; index >= 0; --index) {
+            const QVariantMap entry = m_messages.at(index).toMap();
+            if (entry.value("role").toString() == "user") {
+                image = entry.value("image").toString();
+                break;
+            }
+        }
+    }
     if (!canReplaceConversation())
         return false;
     if (m_key.isEmpty() || !supportedProvider(m_provider) || !m_models.contains(m_model)) {
@@ -667,9 +717,14 @@ bool ChatController::startChat(const QString &text, bool retrying)
         setError(tr("Enter a nonempty message of at most 16 KiB."));
         return false;
     }
+    if (!image.isEmpty() && !ChatImage::valid(image)) {
+        setError(tr("The attached image is invalid. Remove it and attach the photo again."));
+        return false;
+    }
     QVariantList complete;
     QJsonArray history;
     int bytes = text.toUtf8().size();
+    int imageBytes = image.size();
     // Only committed, answered turns belong in subsequent requests.
     for (int i = 0; i + 1 < m_messages.size(); i += 2) {
         const QVariantMap user = m_messages.at(i).toMap();
@@ -681,23 +736,20 @@ bool ChatController::startChat(const QString &text, bool retrying)
         complete.append(assistant);
         for (int j = 0; j < 2; ++j) {
             const QVariantMap entry = j == 0 ? user : assistant;
-            QJsonObject item;
-            item.insert(QStringLiteral("role"), entry.value(QStringLiteral("role")).toString());
-            item.insert(QStringLiteral("content"), entry.value(QStringLiteral("content")).toString());
-            history.append(item);
+            history.append(ChatImage::requestMessage(entry, m_provider == "anthropic"));
+            imageBytes += entry.value("image").toString().size();
             bytes += entry.value(QStringLiteral("content")).toString().toUtf8().size();
         }
     }
-    if (bytes > MaxHistoryBytes || history.size() + 2 > MaxMessages) {
+    if (bytes > MaxHistoryBytes || history.size() + 2 > MaxMessages || imageBytes > 8 * 1024 * 1024) {
         setError(tr("This conversation reached the history limit. Start a new chat."));
         return false;
     }
-    if (!ensureDatabase())
+    if (!ensureDatabase() || !ensureImageSchema())
         return false;
-    QJsonObject user;
-    user.insert(QStringLiteral("role"), QStringLiteral("user"));
-    user.insert(QStringLiteral("content"), text);
-    history.append(user);
+    QVariantMap userMessage = message(QStringLiteral("user"), text, QStringLiteral("pending"));
+    userMessage.insert(QStringLiteral("image"), image);
+    history.append(ChatImage::requestMessage(userMessage, m_provider == "anthropic"));
     QJsonObject body;
     body.insert(QStringLiteral("model"), m_model);
     body.insert(QStringLiteral("messages"), history);
@@ -707,7 +759,11 @@ bool ChatController::startChat(const QString &text, bool retrying)
     QNetworkRequest request = apiRequest(m_provider, m_key, true);
     request.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
     m_messages = complete;
-    m_messages.append(message(QStringLiteral("user"), text, QStringLiteral("pending")));
+    m_messages.append(userMessage);
+    if (!retrying) {
+        m_pendingImage.clear();
+        emit pendingImageChanged();
+    }
     m_messages.append(message(QStringLiteral("assistant"), QString(), QStringLiteral("streaming")));
     m_assistantIndex = m_messages.size() - 1;
     m_lineBuffer.clear();
@@ -1005,9 +1061,26 @@ bool ChatController::ensureDatabase()
     return ok;
 }
 
+bool ChatController::ensureImageSchema()
+{
+    if (m_imageSchemaReady)
+        return true;
+    if (!ensureDatabase())
+        return false;
+    if (!m_database.record(QStringLiteral("messages")).contains(QStringLiteral("image"))) {
+        QSqlQuery query(m_database);
+        if (!query.exec(QStringLiteral("ALTER TABLE messages ADD COLUMN image TEXT NOT NULL DEFAULT ''"))) {
+            setError(tr("Image history storage could not be initialized."));
+            return false;
+        }
+    }
+    m_imageSchemaReady = true;
+    return true;
+}
+
 bool ChatController::saveConversation()
 {
-    if (!ensureDatabase())
+    if (!ensureDatabase() || !ensureImageSchema())
         return false;
     const QString id = m_conversationId.isEmpty() ? QUuid::createUuid().toString() : m_conversationId;
     QString title = m_title;
@@ -1033,11 +1106,12 @@ bool ChatController::saveConversation()
         const QVariantMap entry = m_messages.at(i).toMap();
         if (entry.value(QStringLiteral("status")).toString() != QStringLiteral("complete"))
             break;
-        query.prepare(QStringLiteral("INSERT INTO messages (conversation_id, position, role, content) VALUES (?, ?, ?, ?)"));
+        query.prepare(QStringLiteral("INSERT INTO messages (conversation_id, position, role, content, image) VALUES (?, ?, ?, ?, ?)"));
         query.addBindValue(id);
         query.addBindValue(i);
         query.addBindValue(entry.value(QStringLiteral("role")));
         query.addBindValue(entry.value(QStringLiteral("content")));
+        query.addBindValue(entry.value(QStringLiteral("image"), QStringLiteral("")));
         ok = query.exec();
     }
     if (ok)
@@ -1099,7 +1173,7 @@ void ChatController::openConversation(QString id)
         setError(tr("Select a conversation for the active provider."));
         return;
     }
-    if (!ensureDatabase())
+    if (!ensureDatabase() || !ensureImageSchema())
         return;
     QSqlQuery conversation(m_database);
     conversation.prepare(QStringLiteral("SELECT title, model FROM conversations WHERE id = ? AND provider = ?"));
@@ -1112,7 +1186,7 @@ void ChatController::openConversation(QString id)
     const QString title = conversation.value(0).toString();
     const QString model = conversation.value(1).toString();
     QSqlQuery query(m_database);
-    query.prepare(QStringLiteral("SELECT role, content FROM messages WHERE conversation_id = ? ORDER BY position LIMIT 81"));
+    query.prepare(QStringLiteral("SELECT role, content, image FROM messages WHERE conversation_id = ? ORDER BY position LIMIT 81"));
     query.addBindValue(id);
     if (!query.exec()) {
         setError(tr("Conversation history could not be loaded."));
@@ -1120,10 +1194,17 @@ void ChatController::openConversation(QString id)
     }
     QVariantList loaded;
     int bytes = 0;
+    int imageBytes = 0;
     bool valid = true;
     while (query.next()) {
         const QString role = query.value(0).toString();
         const QString content = query.value(1).toString();
+        const QString image = query.value(2).toString();
+        imageBytes += image.size();
+        if ((!image.isEmpty() && (role != "user" || !ChatImage::valid(image))) || imageBytes > 8 * 1024 * 1024) {
+            valid = false;
+            break;
+        }
         bytes += content.toUtf8().size();
         if (role != (loaded.size() % 2 == 0 ? QStringLiteral("user") : QStringLiteral("assistant"))
                 || content.trimmed().isEmpty() || bytes > MaxHistoryBytes + MaxAssistantBytes
@@ -1131,7 +1212,9 @@ void ChatController::openConversation(QString id)
             valid = false;
             break;
         }
-        loaded.append(message(role, content, QStringLiteral("complete")));
+        QVariantMap entry = message(role, content, QStringLiteral("complete"));
+        entry.insert(QStringLiteral("image"), image);
+        loaded.append(entry);
     }
     if (!valid || loaded.isEmpty() || loaded.size() % 2 != 0) {
         setError(tr("Conversation history is invalid or exceeds the size limit."));
@@ -1140,6 +1223,8 @@ void ChatController::openConversation(QString id)
     m_conversationId = id;
     m_title = title;
     m_messages = loaded;
+    m_pendingImage.clear();
+    emit pendingImageChanged();
     m_assistantIndex = -1;
     if (m_model != model) {
         m_model = model;

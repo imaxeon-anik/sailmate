@@ -1,10 +1,12 @@
 TEMPLATE = app
 TARGET = harbour-sailmate
 CONFIG += c++11 link_pkgconfig
-QT += core gui qml quick network sql
+QT += core gui qml quick network sql concurrent
 PKGCONFIG += sailfishapp sailfishsecrets
 target.path = /usr/bin
 SOURCES += src/main.cpp src/chatcontroller.cpp src/credentialstore.cpp
+SOURCES += src/chatimage.cpp
+HEADERS += src/chatimage.h
 isEmpty(APP_VERSION): APP_VERSION = 0.1.0
 DEFINES += APP_VERSION=\\\"$$APP_VERSION\\\"
 HEADERS += src/chatcontroller.h src/credentialstore.h src/providerprofile.h src/appsettings.h

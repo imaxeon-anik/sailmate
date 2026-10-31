@@ -7,7 +7,7 @@ target.path = /usr/bin
 SOURCES += src/main.cpp src/chatcontroller.cpp src/credentialstore.cpp
 SOURCES += src/chatimage.cpp
 HEADERS += src/chatimage.h
-isEmpty(APP_VERSION): APP_VERSION = 0.1.0
+isEmpty(APP_VERSION): APP_VERSION = 1.0.0
 DEFINES += APP_VERSION=\\\"$$APP_VERSION\\\"
 HEADERS += src/chatcontroller.h src/credentialstore.h src/providerprofile.h src/appsettings.h
 

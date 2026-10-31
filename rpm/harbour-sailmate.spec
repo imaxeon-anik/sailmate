@@ -1,8 +1,8 @@
 Name: harbour-sailmate
-Version: 0.1.0
-Release: 10
+Version: 1.0.0
+Release: 1
 Summary: Native multi-provider AI chat for Sailfish OS
-License: LicenseRef-Proprietary
+License: MIT
 URL: https://github.com/imaxeon-anik/sailmate
 Source0: %{name}-%{version}.tar.bz2
 BuildRequires: pkgconfig(sailfishapp)
@@ -16,7 +16,10 @@ BuildRequires: pkgconfig(Qt5Concurrent)
 Requires: sailfishsilica-qt5 >= 0.10.9
 
 %description
-Sailmate connects directly to OpenAI and Anthropic using your own API keys.
+Sailmate is a native AI chat app for OpenAI, Anthropic Claude and custom
+OpenAI-compatible endpoints. It streams replies, keeps chat history on the device
+and can attach photos for image-capable models. You need your own API key;
+usage is billed by the provider. Keys are stored with Sailfish Secrets.
 
 %prep
 %setup -q -n %{name}-%{version}

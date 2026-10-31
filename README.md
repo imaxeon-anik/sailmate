@@ -49,5 +49,5 @@ devel-su pkcon install-local harbour-sailmate-*.aarch64.rpm
 
 ## License
 
-No app redistribution license has been selected yet. The imported development skill under
-`.github/skills/sailfishos-app/` retains its separate MIT license and attribution.
+Sailmate is released under the [MIT License](LICENSE). The imported development skill under
+`.github/skills/sailfishos-app/` keeps its own MIT license and attribution.

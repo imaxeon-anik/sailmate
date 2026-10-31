@@ -8,6 +8,11 @@
 #include "appsettings.h"
 #include "providerprofile.h"
 #include "chatcontroller.h"
+#include "chatimage.h"
+#include <QImage>
+#include <QJsonArray>
+#include <QJsonObject>
+#include <QUrl>
 
 class FakeReply : public QNetworkReply
 {
@@ -79,6 +84,156 @@ private slots:
         QCoreApplication::setApplicationName(QStringLiteral("Sailmate"));
     }
     void init() { QSettings(settingsFile(), QSettings::IniFormat).clear(); }
+    void imagePreparationAndPayloads()
+    {
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        const QString path = directory.filePath("photo #1.png");
+        QImage image(2000, 1000, QImage::Format_ARGB32);
+        image.fill(Qt::transparent);
+        image.setText("Private metadata", "must not be sent");
+        QVERIFY(image.save(path, "PNG"));
+        const QString prepared = ChatImage::prepare(QUrl::fromLocalFile(path).toString());
+        QVERIFY(ChatImage::valid(prepared));
+        const QByteArray bytes = QByteArray::fromBase64(prepared.section(',', 1).toLatin1());
+        const QImage normalized = QImage::fromData(bytes, "JPEG");
+        QCOMPARE(normalized.size(), QSize(1600, 800));
+        QVERIFY(normalized.textKeys().isEmpty());
+        QVERIFY(qRed(normalized.pixel(0, 0)) > 240);
+        QVERIFY(ChatImage::valid(ChatImage::prepare(path)));
+        QVERIFY(ChatImage::prepare("https://example.invalid/photo.jpg").isEmpty());
+        QVERIFY(ChatImage::prepare("file:///nonexistent.jpg").isEmpty());
+        QVERIFY(!ChatImage::valid("data:image/jpeg;base64,/9j/2Q=="));
+        QVERIFY(!ChatImage::valid(prepared + "!"));
+        QVariantMap user = entry("user", "Describe this", "complete");
+        QCOMPARE(ChatImage::requestMessage(user, false).value("content").toString(), QStringLiteral("Describe this"));
+        user.insert("image", prepared);
+        const QJsonArray openai = ChatImage::requestMessage(user, false).value("content").toArray();
+        QCOMPARE(openai.size(), 2);
+        QCOMPARE(openai.at(1).toObject().value("type").toString(), QStringLiteral("image_url"));
+        QCOMPARE(openai.at(1).toObject().value("image_url").toObject().value("url").toString(), prepared);
+        const QJsonArray anthropic = ChatImage::requestMessage(user, true).value("content").toArray();
+        const QJsonObject source = anthropic.at(1).toObject().value("source").toObject();
+        QCOMPARE(source.value("type").toString(), QStringLiteral("base64"));
+        QCOMPARE(source.value("media_type").toString(), QStringLiteral("image/jpeg"));
+        QCOMPARE(source.value("data").toString(), prepared.section(',', 1));
+    }
+    void imageHistoryMigrationAndIsolation()
+    {
+        QTemporaryDir directory;
+        const QString path = directory.filePath("small.png");
+        QImage image(40, 20, QImage::Format_RGB32);
+        image.fill(Qt::red);
+        QVERIFY(image.save(path, "PNG"));
+        const QString prepared = ChatImage::prepare(path);
+        QVERIFY(ChatImage::valid(prepared));
+        ChatController controller;
+        database(controller);
+        const QString first = controller.createCustomProfile("Images", "https://images.invalid/v1", "model");
+        const QString second = controller.createCustomProfile("Other", "https://other.invalid/v1", "model");
+        controller.activateProvider(first, "fake-key");
+        QVariantMap user = entry("user", "Photo", "complete");
+        user.insert("image", prepared);
+        controller.m_messages << user << entry("assistant", "A red image", "complete");
+        QVERIFY(controller.saveConversation());
+        const QString conversation = controller.m_conversationId;
+        controller.newChat();
+        controller.openConversation(conversation);
+        QCOMPARE(controller.messages().first().toMap().value("image").toString(), prepared);
+        controller.activateProvider(second, "other-key");
+        controller.openConversation(conversation);
+        QVERIFY(!controller.error().isEmpty());
+        QVERIFY(controller.messages().isEmpty());
+        controller.activateProvider(first, "fake-key");
+        controller.attachImage(path);
+        QTRY_VERIFY(!controller.imageBusy());
+        QVERIFY(!controller.pendingImage().isEmpty());
+        controller.removeImage();
+        QVERIFY(controller.pendingImage().isEmpty());
+        QVERIFY(controller.deleteCustomProfile(first));
+        QSqlQuery query(controller.m_database);
+        QVERIFY(query.exec("SELECT COUNT(*) FROM messages"));
+        QVERIFY(query.next());
+        QCOMPARE(query.value(0).toInt(), 0);
+    }
+    void threadDeletionAndActivityTime()
+    {
+        ChatController controller;
+        database(controller);
+        const QString first = controller.createCustomProfile("First", "https://first.invalid/v1", "model");
+        const QString second = controller.createCustomProfile("Second", "https://second.invalid/v1", "model");
+        controller.activateProvider(first, "fake-key");
+        controller.m_messages << entry("user", "question", "complete") << entry("assistant", "answer", "complete");
+        QVERIFY(controller.saveConversation());
+        const QString firstChat = controller.m_conversationId;
+        QSqlQuery query(controller.m_database);
+        const QDate today = QDate::currentDate();
+        const qint64 timestamp = QDateTime(today, QTime(0, 5)).toMSecsSinceEpoch();
+        query.prepare("UPDATE conversations SET updated = ? WHERE id = ?");
+        query.addBindValue(timestamp);
+        query.addBindValue(firstChat);
+        QVERIFY(query.exec());
+        controller.refreshConversations();
+        QCOMPARE(controller.conversations().first().toMap().value("lastUsedTime").toString(), QStringLiteral("00:05"));
+        controller.openConversation(firstChat);
+        controller.refreshConversations();
+        QCOMPARE(controller.conversations().first().toMap().value("lastUsedTime").toString(), QStringLiteral("00:05"));
+        const QDate older = QDate(today.year() - 1, 3, 7);
+        query.prepare("UPDATE conversations SET updated = ? WHERE id = ?");
+        query.addBindValue(QDateTime(older, QTime(9, 5)).toMSecsSinceEpoch());
+        query.addBindValue(firstChat);
+        QVERIFY(query.exec());
+        controller.refreshConversations();
+        QCOMPARE(controller.conversations().first().toMap().value("lastUsedTime").toString(),
+                 QDateTime(older, QTime(9, 5)).toString(QStringLiteral("MMM yyyy")));
+        controller.activateProvider(second, "other-key");
+        controller.m_messages << entry("user", "other", "complete") << entry("assistant", "reply", "complete");
+        QVERIFY(controller.saveConversation());
+        const QString secondChat = controller.m_conversationId;
+        QVERIFY(!controller.deleteConversation(firstChat, first));
+        QVERIFY(!controller.deleteConversation(firstChat, second));
+        controller.setBusy(true);
+        QVERIFY(!controller.deleteConversation(secondChat, second));
+        controller.setBusy(false);
+        controller.m_unsaved = true;
+        QVERIFY(!controller.deleteConversation(secondChat, second));
+        controller.m_unsaved = false;
+        QVERIFY(query.exec("CREATE TRIGGER prevent_thread_delete BEFORE DELETE ON conversations BEGIN SELECT RAISE(ABORT, 'test failure'); END"));
+        QVERIFY(!controller.deleteConversation(secondChat, second));
+        QVERIFY(query.exec("SELECT COUNT(*) FROM messages"));
+        QVERIFY(query.next());
+        QCOMPARE(query.value(0).toInt(), 4);
+        QVERIFY(query.exec("DROP TRIGGER prevent_thread_delete"));
+        QVERIFY(controller.deleteConversation(secondChat, second));
+        QVERIFY(controller.messages().isEmpty());
+        QVERIFY(controller.conversations().isEmpty());
+        QCOMPARE(controller.customProfiles().size(), 2);
+        QCOMPARE(controller.m_key, QStringLiteral("other-key"));
+        QVERIFY(!controller.deleteConversation(secondChat, second));
+        controller.showProviderHistory(first);
+        controller.openConversation(firstChat);
+        QCOMPARE(controller.messages().size(), 2);
+        QVERIFY(!controller.m_reply);
+    }
+    void textOnlyNullImageSaves()
+    {
+        ChatController controller;
+        database(controller);
+        controller.m_provider = QStringLiteral("openai");
+        controller.m_model = QStringLiteral("gpt-4.1-mini");
+        QVariantMap user = entry("user", "text only", "pending");
+        user.insert(QStringLiteral("image"), QString());
+        controller.m_messages << user << entry("assistant", "answer", "streaming");
+        controller.m_assistantIndex = 1;
+        controller.finishChat(true, QString());
+        QVERIFY2(!controller.unsaved(), qPrintable(controller.error()));
+        const QString conversation = controller.m_conversationId;
+        QVERIFY(!conversation.isEmpty());
+        controller.newChat();
+        controller.openConversation(conversation);
+        QCOMPARE(controller.messages().size(), 2);
+        QVERIFY(controller.messages().first().toMap().value("image").toString().isEmpty());
+    }
     void customProfilesAndRequests()
     {
         ChatController controller;
@@ -448,7 +603,10 @@ private slots:
         QTest::newRow("provider-error") << QByteArray("event: error\ndata: {\"secret\":\"not-for-display\"}\n\n");
         QTest::newRow("error-object") << QByteArray("data: {\"error\":{\"message\":\"not-for-display\"}}\n\n");
         QTest::newRow("invalid-choice") << QByteArray("data: {\"choices\":[{\"index\":1,\"delta\":{}}]}\n\n");
-        QTest::newRow("token-limit") << QByteArray("data: {\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"length\"}]}\n\n");
+        QTest::newRow("content-filter") << QByteArray("data: {\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"content_filter\"}]}\n\n");
+        QTest::newRow("tool-call") << QByteArray("data: {\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"id\":\"x\"}]}}]}\n\n");
+        QTest::newRow("text-after-finish") << QByteArray("data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"a\"},\"finish_reason\":\"stop\"}]}\n\n"
+                                                         "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"b\"}}]}\n\n");
         QTest::newRow("invalid-utf8") << QByteArray("data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"\xff\"}}]}\n\n");
         QTest::newRow("after-done") << (openAIStream() + "data: {}\n\n");
     }
@@ -460,6 +618,68 @@ private slots:
         controller.feedStream(stream);
         QVERIFY(!controller.m_streamFailure.isEmpty());
         QVERIFY(!controller.m_streamFailure.contains(QStringLiteral("not-for-display")));
+    }
+    void lenientCompatibleStream()
+    {
+        ChatController controller;
+        database(controller);
+        controller.m_provider = QStringLiteral("openai");
+        controller.m_model = QStringLiteral("gpt-4.1-mini");
+        controller.m_messages << entry("user", "question", "pending") << entry("assistant", QString(), "streaming");
+        controller.m_assistantIndex = 1;
+        const QByteArray stream =
+                "data: {\"choices\":[]}\n\n"
+                "data: {\"choices\":[{\"delta\":{\"role\":\"assistant\",\"content\":\"Hi\",\"tool_calls\":[]},\"finish_reason\":\"\"}]}\n\n"
+                "data: {\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"eos\"}]}\n\n"
+                "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"\"}}]}\n\n";
+        FakeReply *reply = new FakeReply(stream, 200, "text/event-stream", &controller);
+        controller.attachReply(reply, ChatController::Chat);
+        controller.m_timeout.stop();
+        emit reply->readyRead();
+        QVERIFY(controller.m_timeout.isActive());
+        reply->complete();
+        QVERIFY2(controller.error().isEmpty(), qPrintable(controller.error()));
+        QCOMPARE(controller.messages().at(1).toMap().value("content").toString(), QStringLiteral("Hi"));
+        QCOMPARE(controller.messages().at(1).toMap().value("status").toString(), QStringLiteral("complete"));
+    }
+    void truncatedReplyIsKept()
+    {
+        ChatController controller;
+        database(controller);
+        controller.m_provider = QStringLiteral("anthropic");
+        controller.m_model = QStringLiteral("claude-sonnet-4-5");
+        controller.m_messages << entry("user", "question", "pending") << entry("assistant", QString(), "streaming");
+        controller.m_assistantIndex = 1;
+        const QByteArray stream =
+                "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"role\":\"assistant\",\"content\":[]}}\n\n"
+                "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n"
+                "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"Long\"}}\n\n"
+                "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n"
+                "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"max_tokens\"}}\n\n"
+                "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n";
+        FakeReply *reply = new FakeReply(stream, 200, "text/event-stream", &controller);
+        controller.attachReply(reply, ChatController::Chat);
+        reply->complete();
+        QVERIFY2(controller.error().isEmpty(), qPrintable(controller.error()));
+        QVERIFY(controller.messages().at(1).toMap().value("truncated").toBool());
+        const QString conversation = controller.m_conversationId;
+        QVERIFY(!conversation.isEmpty());
+        controller.newChat();
+        controller.openConversation(conversation);
+        QCOMPARE(controller.messages().at(1).toMap().value("content").toString(), QStringLiteral("Long"));
+        QVERIFY(controller.messages().at(1).toMap().value("truncated").toBool());
+        QVERIFY(!controller.messages().at(0).toMap().value("truncated").toBool());
+
+        ChatController empty;
+        empty.m_provider = QStringLiteral("openai");
+        empty.m_messages << entry("user", "question", "pending") << entry("assistant", QString(), "streaming");
+        empty.m_assistantIndex = 1;
+        reply = new FakeReply("data: {\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"length\"}]}\n\ndata: [DONE]\n\n",
+                              200, "text/event-stream", &empty);
+        empty.attachReply(reply, ChatController::Chat);
+        reply->complete();
+        QVERIFY(empty.error().contains(QStringLiteral("length limit")));
+        QCOMPARE(empty.messages().at(1).toMap().value("status").toString(), QStringLiteral("failed"));
     }
     void incompleteFrame()
     {

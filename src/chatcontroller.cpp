@@ -1,4 +1,7 @@
 #include "chatcontroller.h"
+#include "chatimage.h"
+#include <QtConcurrent/QtConcurrentRun>
+#include <QSqlRecord>
 #include "appsettings.h"
 #include "providerprofile.h"
 #include <QSettings>
@@ -82,6 +85,29 @@ bool openAIChatModel(const QString &id)
     return family;
 }
 
+int maxOutputTokens(const QString &provider, const QString &model)
+{
+    // Reasoning models spend part of this budget on hidden reasoning before answering.
+    const bool reasoning = provider == QLatin1String("openai")
+            && (model.startsWith(QStringLiteral("gpt-5"))
+                || (model.size() > 1 && model.at(0) == QLatin1Char('o') && model.at(1).isDigit()));
+    return reasoning ? 16384 : 4096;
+}
+
+QString activityLabel(const QDateTime &time, const QDate &today)
+{
+    if (time.date() == today)
+        return time.toString(QStringLiteral("hh:mm"));
+    if (time.date().year() == today.year())
+        return time.toString(QStringLiteral("d MMM"));
+    return time.toString(QStringLiteral("MMM yyyy"));
+}
+
+bool present(const QJsonValue &value)
+{
+    return !value.isUndefined() && !value.isNull();
+}
+
 bool decodeUtf8(const QByteArray &bytes, QString *text)
 {
     QTextCodec::ConverterState state;
@@ -108,6 +134,17 @@ ChatController::ChatController(QObject *parent)
             m_customProfiles.append(profile);
     }
     m_timeout.setSingleShot(true);
+    connect(&m_imageWatcher, &QFutureWatcher<QString>::finished, this, [this]() {
+        const QString image = m_imageWatcher.result();
+        m_imageProcessing = false;
+        if (image.isEmpty())
+            setError(tr("Choose a readable JPEG or PNG up to 10 MiB and 20 megapixels. The resized image must fit within 1 MiB."));
+        else {
+            m_pendingImage = image;
+            clearError();
+        }
+        emit pendingImageChanged();
+    });
     connect(&m_timeout, &QTimer::timeout, this, [this]() {
         stopRequest(tr("The request timed out. You can retry manually."));
     });
@@ -300,6 +337,10 @@ void ChatController::setBusy(bool busy)
 
 bool ChatController::idle()
 {
+    if (imageBusy()) {
+        setError(tr("Wait for the image to finish processing."));
+        return false;
+    }
     if (!m_busy)
         return true;
     setError(tr("Wait for the current request to finish or cancel it first."));
@@ -415,6 +456,8 @@ void ChatController::readReply()
         stopRequest(tr("The server response exceeded the size limit."));
         return;
     }
+    if (!bytes.isEmpty())
+        m_timeout.start(RequestTimeoutMs);
     const int status = m_reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
     if (status < 200 || status >= 300)
         return;
@@ -468,6 +511,10 @@ void ChatController::finishReply()
         failure = tr("The provider rejected access. Check the API key and permissions.");
     else if (status == 429)
         failure = tr("The provider rate limit or quota was reached. Check billing and retry later.");
+    else if (status == 413)
+        failure = tr("The provider rejected the request size. Start a new chat or use a smaller photo.");
+    else if ((status == 400 || status == 415 || status == 422) && m_operation == Chat)
+        failure = tr("The provider rejected the message format. If this chat contains photos, select an image-capable model and an endpoint that accepts images.");
     else if (status == 0)
         failure = tr("The network request failed. Check your connection.");
     else if (status < 200 || status >= 300)
@@ -486,9 +533,13 @@ void ChatController::finishReply()
     }
     if (operation == Chat && failure.isEmpty()) {
         // A frame is only complete after a blank line; unfinished frames are not accepted.
+        // OpenAI-compatible servers may close the stream after finish_reason without [DONE].
+        const bool ended = m_provider == QStringLiteral("anthropic") ? m_sawDone : m_sawFinish;
         if (!m_streamFailure.isEmpty())
             failure = m_streamFailure;
-        else if (!m_sawDone || !m_sawFinish || m_assistantText.trimmed().isEmpty()
+        else if (m_truncated && m_assistantText.trimmed().isEmpty())
+            failure = tr("The model reached its length limit before writing an answer. Retry or choose a different model.");
+        else if (!ended || !m_sawFinish || m_assistantText.trimmed().isEmpty()
                  || !m_lineBuffer.trimmed().isEmpty() || !m_eventData.isEmpty())
             failure = tr("The response was empty or incomplete. You can retry manually.");
     }
@@ -584,6 +635,8 @@ void ChatController::setModel(QString model)
 
 void ChatController::resetChat()
 {
+    m_pendingImage.clear();
+    emit pendingImageChanged();
     m_messages.clear();
     m_conversationId.clear();
     m_title.clear();
@@ -624,6 +677,23 @@ void ChatController::forgetProvider(QString provider)
     clearError();
 }
 
+void ChatController::attachImage(QString fileUrl)
+{
+    if (!idle() || !canReplaceConversation() || m_provider.isEmpty())
+        return;
+    m_imageProcessing = true;
+    m_imageWatcher.setFuture(QtConcurrent::run(ChatImage::prepare, fileUrl));
+    emit pendingImageChanged();
+}
+
+void ChatController::removeImage()
+{
+    if (!idle() || !canReplaceConversation())
+        return;
+    m_pendingImage.clear();
+    emit pendingImageChanged();
+}
+
 void ChatController::sendMessage(QString text)
 {
     if (idle())
@@ -656,7 +726,16 @@ void ChatController::retry()
 
 bool ChatController::startChat(const QString &text, bool retrying)
 {
-    Q_UNUSED(retrying);
+    QString image = m_pendingImage;
+    if (retrying) {
+        for (int index = m_messages.size() - 1; index >= 0; --index) {
+            const QVariantMap entry = m_messages.at(index).toMap();
+            if (entry.value("role").toString() == "user") {
+                image = entry.value("image").toString();
+                break;
+            }
+        }
+    }
     if (!canReplaceConversation())
         return false;
     if (m_key.isEmpty() || !supportedProvider(m_provider) || !m_models.contains(m_model)) {
@@ -667,9 +746,14 @@ bool ChatController::startChat(const QString &text, bool retrying)
         setError(tr("Enter a nonempty message of at most 16 KiB."));
         return false;
     }
+    if (!image.isEmpty() && !ChatImage::valid(image)) {
+        setError(tr("The attached image is invalid. Remove it and attach the photo again."));
+        return false;
+    }
     QVariantList complete;
     QJsonArray history;
     int bytes = text.toUtf8().size();
+    int imageBytes = image.size();
     // Only committed, answered turns belong in subsequent requests.
     for (int i = 0; i + 1 < m_messages.size(); i += 2) {
         const QVariantMap user = m_messages.at(i).toMap();
@@ -681,33 +765,35 @@ bool ChatController::startChat(const QString &text, bool retrying)
         complete.append(assistant);
         for (int j = 0; j < 2; ++j) {
             const QVariantMap entry = j == 0 ? user : assistant;
-            QJsonObject item;
-            item.insert(QStringLiteral("role"), entry.value(QStringLiteral("role")).toString());
-            item.insert(QStringLiteral("content"), entry.value(QStringLiteral("content")).toString());
-            history.append(item);
+            history.append(ChatImage::requestMessage(entry, m_provider == "anthropic"));
+            imageBytes += entry.value("image").toString().size();
             bytes += entry.value(QStringLiteral("content")).toString().toUtf8().size();
         }
     }
-    if (bytes > MaxHistoryBytes || history.size() + 2 > MaxMessages) {
+    if (bytes > MaxHistoryBytes || history.size() + 2 > MaxMessages || imageBytes > 8 * 1024 * 1024) {
         setError(tr("This conversation reached the history limit. Start a new chat."));
         return false;
     }
-    if (!ensureDatabase())
+    if (!ensureDatabase() || !ensureMessageSchema())
         return false;
-    QJsonObject user;
-    user.insert(QStringLiteral("role"), QStringLiteral("user"));
-    user.insert(QStringLiteral("content"), text);
-    history.append(user);
+    QVariantMap userMessage = message(QStringLiteral("user"), text, QStringLiteral("pending"));
+    userMessage.insert(QStringLiteral("image"), image);
+    history.append(ChatImage::requestMessage(userMessage, m_provider == "anthropic"));
     QJsonObject body;
     body.insert(QStringLiteral("model"), m_model);
     body.insert(QStringLiteral("messages"), history);
     body.insert(QStringLiteral("stream"), true);
     body.insert(m_provider == QStringLiteral("openai") ? QStringLiteral("max_completion_tokens")
-                                                        : QStringLiteral("max_tokens"), 2048);
+                                                        : QStringLiteral("max_tokens"),
+                maxOutputTokens(m_provider, m_model));
     QNetworkRequest request = apiRequest(m_provider, m_key, true);
     request.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
     m_messages = complete;
-    m_messages.append(message(QStringLiteral("user"), text, QStringLiteral("pending")));
+    m_messages.append(userMessage);
+    if (!retrying) {
+        m_pendingImage.clear();
+        emit pendingImageChanged();
+    }
     m_messages.append(message(QStringLiteral("assistant"), QString(), QStringLiteral("streaming")));
     m_assistantIndex = m_messages.size() - 1;
     m_lineBuffer.clear();
@@ -717,6 +803,7 @@ bool ChatController::startChat(const QString &text, bool retrying)
     m_assistantText.clear();
     m_sawDone = false;
     m_sawFinish = false;
+    m_truncated = false;
     m_messageStarted = false;
     m_messageDelta = false;
     m_contentBlocks.clear();
@@ -733,6 +820,8 @@ void ChatController::finishChat(bool success, const QString &reason)
         QVariantMap assistant = m_messages.at(m_assistantIndex).toMap();
         QVariantMap user = m_messages.at(m_assistantIndex - 1).toMap();
         assistant.insert(QStringLiteral("status"), status);
+        if (success && m_truncated)
+            assistant.insert(QStringLiteral("truncated"), true);
         user.insert(QStringLiteral("status"), status);
         m_messages[m_assistantIndex] = assistant;
         m_messages[m_assistantIndex - 1] = user;
@@ -826,6 +915,8 @@ void ChatController::consumeLine(QByteArray line)
 
 void ChatController::appendAssistant(const QString &text)
 {
+    if (text.isEmpty())
+        return;
     if ((m_assistantText + text).toUtf8().size() > MaxAssistantBytes) {
         streamError(tr("The response exceeded the text size limit."));
         return;
@@ -880,38 +971,50 @@ void ChatController::dispatchEvent()
             return;
         }
         const QJsonArray choices = choicesValue.toArray();
-        if (choices.isEmpty() && object.value(QStringLiteral("usage")).isObject())
+        if (choices.isEmpty())
             return;
         if (choices.size() != 1 || !choices.at(0).isObject()) {
             streamError(invalid);
             return;
         }
         const QJsonObject choice = choices.at(0).toObject();
-        if (choice.value(QStringLiteral("index")).toInt(-1) != 0 || m_sawFinish
-                || !choice.value(QStringLiteral("delta")).isObject()) {
+        const QJsonValue deltaValue = choice.value(QStringLiteral("delta"));
+        if (choice.value(QStringLiteral("index")).toInt(0) != 0
+                || (present(deltaValue) && !deltaValue.isObject())) {
             streamError(invalid);
             return;
         }
-        const QJsonObject delta = choice.value(QStringLiteral("delta")).toObject();
-        if (delta.contains(QStringLiteral("tool_calls")) || delta.contains(QStringLiteral("function_call"))
-                || (delta.contains(QStringLiteral("role")) && delta.value(QStringLiteral("role")).toString() != QStringLiteral("assistant"))) {
+        const QJsonObject delta = deltaValue.toObject();
+        const QJsonValue toolCalls = delta.value(QStringLiteral("tool_calls"));
+        const QString role = delta.value(QStringLiteral("role")).toString();
+        if ((toolCalls.isArray() ? !toolCalls.toArray().isEmpty() : present(toolCalls))
+                || present(delta.value(QStringLiteral("function_call")))
+                || (!role.isEmpty() && role != QStringLiteral("assistant"))) {
             streamError(invalid);
             return;
         }
         const QJsonValue content = delta.value(QStringLiteral("content"));
-        if (!content.isUndefined() && !content.isNull() && !content.isString()) {
+        if (present(content) && !content.isString()) {
             streamError(invalid);
             return;
         }
-        appendAssistant(content.toString());
-        const QJsonValue finish = choice.value(QStringLiteral("finish_reason"));
-        if (!finish.isNull() && !finish.isUndefined()) {
-            if (finish.toString() != QStringLiteral("stop")) {
-                streamError(tr("The response stopped before completing (limit or unsupported response)."));
-                return;
-            }
-            m_sawFinish = true;
+        if (m_sawFinish) {
+            if (!content.toString().isEmpty())
+                streamError(invalid);
+            return;
         }
+        appendAssistant(content.toString());
+        const QString finish = choice.value(QStringLiteral("finish_reason")).toString();
+        if (finish.isEmpty())
+            return;
+        if (finish == QStringLiteral("length") || finish == QStringLiteral("max_tokens")) {
+            m_truncated = true;
+        } else if (finish != QStringLiteral("stop") && finish != QStringLiteral("eos")
+                   && finish != QStringLiteral("end_turn") && finish != QStringLiteral("stop_sequence")) {
+            streamError(tr("The provider ended the response early, for example because of a content filter or a tool call."));
+            return;
+        }
+        m_sawFinish = true;
         return;
     }
     const QString type = object.value(QStringLiteral("type")).toString();
@@ -961,8 +1064,10 @@ void ChatController::dispatchEvent()
             streamError(invalid);
             return;
         }
-        if (stop != QStringLiteral("end_turn") && stop != QStringLiteral("stop_sequence")) {
-            streamError(tr("The response stopped before completing (limit or unsupported response)."));
+        if (stop == QStringLiteral("max_tokens")) {
+            m_truncated = true;
+        } else if (stop != QStringLiteral("end_turn") && stop != QStringLiteral("stop_sequence")) {
+            streamError(tr("The provider ended the response early, for example because of a refusal or a tool call."));
             return;
         }
         m_messageDelta = true;
@@ -1005,9 +1110,31 @@ bool ChatController::ensureDatabase()
     return ok;
 }
 
+bool ChatController::ensureMessageSchema()
+{
+    if (m_messageSchemaReady)
+        return true;
+    if (!ensureDatabase())
+        return false;
+    const QSqlRecord record = m_database.record(QStringLiteral("messages"));
+    QSqlQuery query(m_database);
+    if (!record.contains(QStringLiteral("image"))
+            && !query.exec(QStringLiteral("ALTER TABLE messages ADD COLUMN image TEXT NOT NULL DEFAULT ''"))) {
+        setError(tr("Image history storage could not be initialized."));
+        return false;
+    }
+    if (!record.contains(QStringLiteral("truncated"))
+            && !query.exec(QStringLiteral("ALTER TABLE messages ADD COLUMN truncated INTEGER NOT NULL DEFAULT 0"))) {
+        setError(tr("Conversation storage could not be initialized."));
+        return false;
+    }
+    m_messageSchemaReady = true;
+    return true;
+}
+
 bool ChatController::saveConversation()
 {
-    if (!ensureDatabase())
+    if (!ensureDatabase() || !ensureMessageSchema())
         return false;
     const QString id = m_conversationId.isEmpty() ? QUuid::createUuid().toString() : m_conversationId;
     QString title = m_title;
@@ -1033,11 +1160,14 @@ bool ChatController::saveConversation()
         const QVariantMap entry = m_messages.at(i).toMap();
         if (entry.value(QStringLiteral("status")).toString() != QStringLiteral("complete"))
             break;
-        query.prepare(QStringLiteral("INSERT INTO messages (conversation_id, position, role, content) VALUES (?, ?, ?, ?)"));
+        query.prepare(QStringLiteral("INSERT INTO messages (conversation_id, position, role, content, image, truncated) VALUES (?, ?, ?, ?, ?, ?)"));
         query.addBindValue(id);
         query.addBindValue(i);
         query.addBindValue(entry.value(QStringLiteral("role")));
         query.addBindValue(entry.value(QStringLiteral("content")));
+        const QString image = entry.value(QStringLiteral("image")).toString();
+        query.addBindValue(image.isEmpty() ? QStringLiteral("") : image);
+        query.addBindValue(entry.value(QStringLiteral("truncated")).toBool() ? 1 : 0);
         ok = query.exec();
     }
     if (ok)
@@ -1049,6 +1179,43 @@ bool ChatController::saveConversation()
     }
     m_conversationId = id;
     m_title = title;
+    refreshConversations();
+    return true;
+}
+
+bool ChatController::deleteConversation(QString id, QString provider)
+{
+    if (!idle() || !canReplaceConversation())
+        return false;
+    if (id.isEmpty() || id.size() > 100 || provider != m_provider || !supportedProvider(provider)) {
+        setError(tr("Select a chat for the active provider."));
+        return false;
+    }
+    if (!ensureDatabase())
+        return false;
+    if (!m_database.transaction()) {
+        setError(tr("The chat could not be deleted. Please retry."));
+        return false;
+    }
+    QSqlQuery query(m_database);
+    query.prepare(QStringLiteral("DELETE FROM messages WHERE conversation_id IN (SELECT id FROM conversations WHERE id = ? AND provider = ?)"));
+    query.addBindValue(id);
+    query.addBindValue(provider);
+    bool ok = query.exec();
+    if (ok) {
+        query.prepare(QStringLiteral("DELETE FROM conversations WHERE id = ? AND provider = ?"));
+        query.addBindValue(id);
+        query.addBindValue(provider);
+        ok = query.exec() && query.numRowsAffected() == 1;
+    }
+    if (!ok || !m_database.commit()) {
+        m_database.rollback();
+        setError(tr("The chat could not be deleted or is no longer available."));
+        return false;
+    }
+    if (m_conversationId == id)
+        resetChat();
+    clearError();
     refreshConversations();
     return true;
 }
@@ -1068,7 +1235,7 @@ void ChatController::refreshConversations()
     m_hasMoreConversations = false;
     if (!m_provider.isEmpty() && ensureDatabase()) {
         QSqlQuery query(m_database);
-        query.prepare(QStringLiteral("SELECT id, title, provider, model FROM conversations WHERE provider = ? ORDER BY updated DESC, id DESC LIMIT ?"));
+        query.prepare(QStringLiteral("SELECT id, title, provider, model, updated FROM conversations WHERE provider = ? ORDER BY updated DESC, id DESC LIMIT ?"));
         query.addBindValue(m_provider);
         query.addBindValue(m_historyLimit + 1);
         if (!query.exec()) {
@@ -1084,6 +1251,8 @@ void ChatController::refreshConversations()
                 entry.insert(QStringLiteral("title"), query.value(1));
                 entry.insert(QStringLiteral("provider"), query.value(2));
                 entry.insert(QStringLiteral("model"), query.value(3));
+                entry.insert(QStringLiteral("lastUsedTime"), activityLabel(QDateTime::fromMSecsSinceEpoch(query.value(4).toLongLong()).toLocalTime(),
+                                                                           QDate::currentDate()));
                 m_conversations.append(entry);
             }
         }
@@ -1099,7 +1268,7 @@ void ChatController::openConversation(QString id)
         setError(tr("Select a conversation for the active provider."));
         return;
     }
-    if (!ensureDatabase())
+    if (!ensureDatabase() || !ensureMessageSchema())
         return;
     QSqlQuery conversation(m_database);
     conversation.prepare(QStringLiteral("SELECT title, model FROM conversations WHERE id = ? AND provider = ?"));
@@ -1112,7 +1281,7 @@ void ChatController::openConversation(QString id)
     const QString title = conversation.value(0).toString();
     const QString model = conversation.value(1).toString();
     QSqlQuery query(m_database);
-    query.prepare(QStringLiteral("SELECT role, content FROM messages WHERE conversation_id = ? ORDER BY position LIMIT 81"));
+    query.prepare(QStringLiteral("SELECT role, content, image, truncated FROM messages WHERE conversation_id = ? ORDER BY position LIMIT 81"));
     query.addBindValue(id);
     if (!query.exec()) {
         setError(tr("Conversation history could not be loaded."));
@@ -1120,10 +1289,17 @@ void ChatController::openConversation(QString id)
     }
     QVariantList loaded;
     int bytes = 0;
+    int imageBytes = 0;
     bool valid = true;
     while (query.next()) {
         const QString role = query.value(0).toString();
         const QString content = query.value(1).toString();
+        const QString image = query.value(2).toString();
+        imageBytes += image.size();
+        if ((!image.isEmpty() && (role != "user" || !ChatImage::valid(image))) || imageBytes > 8 * 1024 * 1024) {
+            valid = false;
+            break;
+        }
         bytes += content.toUtf8().size();
         if (role != (loaded.size() % 2 == 0 ? QStringLiteral("user") : QStringLiteral("assistant"))
                 || content.trimmed().isEmpty() || bytes > MaxHistoryBytes + MaxAssistantBytes
@@ -1131,7 +1307,11 @@ void ChatController::openConversation(QString id)
             valid = false;
             break;
         }
-        loaded.append(message(role, content, QStringLiteral("complete")));
+        QVariantMap entry = message(role, content, QStringLiteral("complete"));
+        entry.insert(QStringLiteral("image"), image);
+        if (role == QStringLiteral("assistant") && query.value(3).toInt() != 0)
+            entry.insert(QStringLiteral("truncated"), true);
+        loaded.append(entry);
     }
     if (!valid || loaded.isEmpty() || loaded.size() % 2 != 0) {
         setError(tr("Conversation history is invalid or exceeds the size limit."));
@@ -1140,6 +1320,8 @@ void ChatController::openConversation(QString id)
     m_conversationId = id;
     m_title = title;
     m_messages = loaded;
+    m_pendingImage.clear();
+    emit pendingImageChanged();
     m_assistantIndex = -1;
     if (m_model != model) {
         m_model = model;

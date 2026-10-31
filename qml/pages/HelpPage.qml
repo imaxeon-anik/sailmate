@@ -31,6 +31,16 @@ Page {
             spacing: Theme.paddingLarge
 
             PageHeader { title: page.topic === "profile" ? "Custom profile help" : page.topic === "key" ? "API key help" : "Help" }
+            Label {
+                x: Theme.horizontalPageMargin
+                width: parent.width - 2 * x
+                text: "Sailmate " + Qt.application.version
+                textFormat: Text.PlainText
+                color: Theme.secondaryColor
+                font.pixelSize: Theme.fontSizeSmall
+                horizontalAlignment: Text.AlignRight
+                wrapMode: Text.Wrap
+            }
             Repeater {
                 model: page.sections
                 delegate: Column {
@@ -47,14 +57,6 @@ Page {
                         font.pixelSize: Theme.fontSizeSmall
                     }
                 }
-            }
-            Label {
-                x: Theme.horizontalPageMargin
-                width: parent.width - 2 * x
-                text: "Sailmate " + Qt.application.version
-                textFormat: Text.PlainText
-                color: Theme.secondaryColor
-                font.pixelSize: Theme.fontSizeSmall
             }
             Item { width: 1; height: Theme.paddingLarge }
         }

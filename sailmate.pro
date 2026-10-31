@@ -17,9 +17,7 @@ qml.files = qml
 qml.path = /usr/share/harbour-sailmate
 desktop.files = rpm/harbour-sailmate.desktop
 desktop.path = /usr/share/applications
-icon.files = rpm/harbour-sailmate.svg
-icon.path = /usr/share/icons/hicolor/scalable/apps
-INSTALLS += target qml desktop icon
+INSTALLS += target qml desktop
 iconSizes = 86 108 128 172
 for(size, iconSizes) {
     icon$${size}.files = icons/$${size}x$${size}/harbour-sailmate.png

@@ -170,7 +170,10 @@ Page {
                 } else {
                     if (page.providerId.indexOf("custom-") === 0) {
                         chat.showProviderHistory(provider)
-                        if (!chat.error) app.showCustomHistory()
+                        if (!chat.error) {
+                            chat.connectProvider(key)
+                            app.showCustomHistory()
+                        }
                     } else {
                         chat.activateProvider(provider, key)
                         if (chat.provider === provider && !chat.error) app.showChat()

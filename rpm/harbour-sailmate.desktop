@@ -9,4 +9,4 @@ X-Nemo-Application-Type=silica-qt5
 [X-Sailjail]
 OrganizationName=io.github.imaxeon-anik
 ApplicationName=Sailmate
-Permissions=Internet;Secrets;Pictures
+Permissions=Internet;Secrets;Pictures;MediaIndexing

@@ -4,10 +4,7 @@ import Sailfish.Pickers 1.0
 
 ImagePickerPage {
     allowedOrientations: Orientation.All
-    onSelectedContentPropertiesChanged: {
-        if (selectedContentProperties.filePath) {
-            chat.attachImage(selectedContentProperties.filePath)
-            pageStack.pop()
-        }
+    onSelectedContentChanged: {
+        if (selectedContent) chat.attachImage(selectedContent.toString())
     }
 }

@@ -60,21 +60,46 @@ Page {
                 color: Theme.highlightColor
             }
         }
-        delegate: BackgroundItem {
+        delegate: ListItem {
+            id: chatItem
             width: ListView.view.width
             visible: modelData.provider === chat.provider
-            height: visible ? Theme.itemSizeLarge : 0
-            enabled: !chat.busy && !vault.busy
+            contentHeight: visible ? Theme.itemSizeLarge : 0
+            enabled: !chat.busy && !vault.busy && !chat.unsaved && !chat.imageBusy
+            menu: ContextMenu {
+                MenuItem {
+                    text: "Delete chat"
+                    enabled: !chat.busy && !vault.busy && !chat.unsaved && !chat.imageBusy
+                    onClicked: {
+                        var conversationId = modelData.id
+                        var providerId = modelData.provider
+                        var dialog = pageStack.push(Qt.resolvedUrl("DeleteChatDialog.qml"), { chatTitle: modelData.title })
+                        dialog.accepted.connect(function() {
+                            if (!vault.busy) chat.deleteConversation(conversationId, providerId)
+                        })
+                    }
+                }
+            }
             onClicked: {
                 if (chat.busy || vault.busy) return
                 page.openChat(modelData.id)
             }
             Column {
                 x: Theme.horizontalPageMargin
-                width: parent.width - 2 * x
+                width: timeLabel.x - x - Theme.paddingMedium
                 anchors.verticalCenter: parent.verticalCenter
                 Label { width: parent.width; text: modelData.title; textFormat: Text.PlainText; truncationMode: TruncationMode.Fade }
                 Label { width: parent.width; text: modelData.model; textFormat: Text.PlainText; font.pixelSize: Theme.fontSizeSmall; color: Theme.secondaryColor; truncationMode: TruncationMode.Fade }
+            }
+            Label {
+                id: timeLabel
+                anchors { right: parent.right; rightMargin: Theme.horizontalPageMargin; verticalCenter: parent.verticalCenter }
+                width: Theme.fontSizeSmall * 4.5
+                text: modelData.lastUsedTime || ""
+                textFormat: Text.PlainText
+                font.pixelSize: Theme.fontSizeSmall
+                color: Theme.secondaryColor
+                horizontalAlignment: Text.AlignRight
             }
         }
         ViewPlaceholder {

@@ -19,7 +19,8 @@ not yet validated on a phone or with live provider credentials.
   does not delete history or send it to another endpoint. History entries push conversations.
 - The composer uses a native themed send icon beside the message field, changing to cancel
   while a request runs. Empty messages cannot be sent; Retry appears separately after errors.
-- Conversation pulley actions: new chat, change model and Home. History offers
+- Conversation pulley actions: change model, update API key and Home; the push-up menu at the
+  end of a chat offers change model and Home. History offers
   new chat and Home, which returns to provider selection. Back navigation is disabled while a request is active; cancel
   or wait before leaving so a streaming response is not orphaned.
 - Provider changes start a fresh chat. History can only be opened under its original provider.
@@ -33,7 +34,14 @@ directory; do not treat it as an encrypted vault. Messages may remain with the p
 its retention policies. No analytics, tool execution, built-in third-party gateway or automatic retries.
 
 Responses currently display as plain text, not rendered Markdown. General file attachments, MCP,
-agent tools, individual chat deletion/export and token-cost reporting are not implemented.
+agent tools, general chat export and token-cost reporting are not implemented.
+
+Long-press a history row and choose **Delete chat** to open a confirmation. Deletion removes
+only that provider's selected local thread, including its stored photos. It does not remove
+other chats, profiles, saved API keys, or provider-side data. History rows show the last saved
+message activity time, right-aligned in a smaller font: **hh:mm** for today, **d MMM** earlier
+this year and **MMM yyyy** for older chats. Reading a
+chat does not change its timestamp. Help shows the app version immediately below its heading.
 
 ## Photo attachments
 
@@ -61,60 +69,9 @@ SDK compilation and device testing. No photos are sent merely by selecting them.
 
 ## Custom OpenAI-compatible profiles
 
-Choose **Custom** in the provider picker, then pull down **Add profile**. Give each profile
-an identifiable name and an HTTPS base URL, including `/v1` if the service requires it.
-The list shows all saved profiles, or "No custom profiles" with a pull-down hint when empty.
-Rows show the name and URL, with "API key required" only when no key is recorded. The delete
-icon remains available. The Custom history pulley menu's **Status** action shows the profile's
-credential record, model configuration and current session state without loading keys or making
-network requests. Recorded credentials and loaded models do not guarantee chat access or billing.
-Selecting a profile opens its local chat history without loading a key or contacting the endpoint.
-Opening or starting a Custom chat is local and does not load credentials or contact the endpoint.
-Use **Connect** on the chat page before sending. It checks Sailfish Secrets directly, including
-when the saved-key index is missing, and opens key setup only when no secret exists. Key setup
-returns to the same conversation with its draft intact. **Update API key** is in the chat menu.
-Model discovery can be cancelled with the chat's cancel icon; saved messages remain readable.
-Reconnecting preserves an existing conversation's model. If it is no longer available, sending
-is disabled until you explicitly choose a replacement using **Choose model**.
-Swipe back from Custom history to the profile list, or use Home to return to provider selection.
-Sailmate appends `/models` for discovery and `/chat/completions` for streaming text chat.
-Only Bearer API-key authentication and streaming OpenAI-compatible chat completions are
-supported. HTTP, URL user information, query strings and fragments are rejected. Azure
-deployment URLs, query-based authentication and custom headers are not supported.
-
-Leave the manual model ID empty to discover the service's models; custom model names are
-not filtered to OpenAI's naming conventions. Alternatively, enter the service's exact model
-ID to bypass `/models`. **Save and continue** then saves the key without validation: it is
-**not authentication verification**, and does not establish model access or billing status.
-Those are only tested when a chat request is made. “Key saved” indicates storage, not proof
-that the credential is valid.
-
-Key-index write failures are reported instead of being treated as successful saves. The key-entry
-page also offers **Recover saved key**, which loads the existing secret and repairs its settings
-index when possible. This does not recover missing Custom profile metadata or change secret ownership.
-
-History initially lists 200 conversations; **Load older chats** reveals subsequent batches.
-If a received response cannot be saved, **Retry save** retries only the local database write,
-without another API request. Navigation and new sends are blocked until it succeeds or you
-confirm **Discard unsaved changes**. The confirmation offers **Copy conversation** before
-discarding; copying places private conversation text on the system clipboard. Discarding clears
-only the in-memory conversation, never its previously saved history. The unsaved response is
-still in memory: force-closing the app or losing power can discard it.
-
-Profiles are persisted when created, even if key entry is cancelled. Names, URLs and manual
-models are immutable; profile editing is not implemented. Create a separate
-profile for endpoint or model-configuration changes. Each profile has its own immutable
-identity, saved key and conversation history, even when names or URLs are the same. Removing
-a key through the profile's long-press menu retains the profile and history and does not revoke
-the key at the service. The delete icon opens a confirmation to permanently delete the profile,
-its saved key and all its local chats. Other profiles are unaffected. Key deletion must succeed
-before profile/history deletion proceeds; if a later step fails, an error explains what to retry.
-These operations do not revoke provider-side keys or delete data held by the service.
-Switching profiles never transfers the previous profile's history.
-
-All request data, including the API key and conversation sent for
-completion, goes to the chosen URL; its operator's access, billing and retention rules apply.
-Check the endpoint shown in the profile list, key-entry page and chat header before sending.
+Choose **Custom** in the provider picker to add a named profile with an HTTPS base URL
+(including `/v1` if required) and, optionally, a fixed model ID. Each profile has its own key
+and chat history; your key and messages go to that endpoint, so check it before sending.
 
 ## Screen previews
 
@@ -122,43 +79,22 @@ Open [screen previews](docs/sailmate-preview.html) in a browser for twelve illus
 mockups, including the Custom profile flow and centred pulley-menu labels. These are not screenshots of the running
 Sailfish app; native styling and interactions still require device validation.
 
-## SSD development
+## Building
 
-Source: `/Volumes/ANIKT9-VMs/sailfish-dev/src/sailmate`.
-Build VM: `sfbuild`, Ubuntu x86_64 with Sailfish SDK 3.13.5.
-Target: SailfishOS 5.1.0.11-aarch64 (Qt 5.6.3 / C++11).
-
-```bash
-/Volumes/ANIKT9-VMs/sailfish-dev/vm-start.sh
-bash scripts/build-rpm.sh aarch64
-```
-
-VS Code: run **Sailmate: build Xperia RPM (aarch64)** or Cmd+Shift+B.
-The script synchronizes only this app into `~/src/sailmate` in the VM and copies RPMs to
-`/Volumes/ANIKT9-VMs/sailfish-dev/xperia10v/app-rpms/`. VM-only source edits are overwritten.
-The YouTube project and its build script are not modified.
-
-Never disconnect the SSD while the VM runs; never run the VM on two Macs simultaneously.
-Stop with `/Volumes/ANIKT9-VMs/sailfish-dev/vm-stop.sh` before ejecting the SSD.
-Phone installation is a separate, explicitly authorized action.
-
-## Tests
-
-The backend unit tests use fake replies and an in-memory database: no API keys, external
-requests or charges. After synchronizing source via the build script, inside the Ubuntu VM:
+Sailmate builds with the [Sailfish SDK](https://docs.sailfishos.org/Tools/Sailfish_SDK/)
+(tested with SDK 3.13 and a SailfishOS 5.1 target; the code stays compatible with Qt 5.6 and
+C++11). From the repository root:
 
 ```bash
-mkdir -p ~/sailmate-tests
-cd ~/sailmate-tests
-qmake ~/src/sailmate/tests/network/network.pro
-make -j2
-./tst_chatcontroller
+sfdk -c target=SailfishOS-5.1.0.11-aarch64 build
 ```
 
-Host test dependencies: `qtbase5-dev`, `libqt5sql5-sqlite`, `g++`, `make`.
-Ubuntu host tests use Qt 5.15; the RPM build separately checks Qt 5.6 compatibility.
-Tests cover split/UTF-8 SSE frames, malformed/error events, incomplete output, credential
-validation, cancellation, provider-bound history and request-state guards.
+The RPM is written to `RPMS/`. Use the `armv7hl` or `i486` target for other devices or the
+emulator. Install it on a device with developer mode enabled:
+
+```bash
+devel-su pkcon install-local harbour-sailmate-*.aarch64.rpm
+```
 
 ## Device acceptance checks still required
 

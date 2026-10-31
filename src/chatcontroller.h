@@ -70,6 +70,7 @@ public:
     Q_INVOKABLE void cancel();
     Q_INVOKABLE void newChat();
     Q_INVOKABLE void openConversation(QString id);
+    Q_INVOKABLE bool deleteConversation(QString id, QString provider);
     Q_INVOKABLE void forgetProvider(QString provider);
     Q_INVOKABLE void clearError();
 
@@ -117,7 +118,7 @@ private:
     void appendAssistant(const QString &text);
     bool ensureDatabase();
     bool saveConversation();
-    bool ensureImageSchema();
+    bool ensureMessageSchema();
     void refreshConversations();
 
     QNetworkAccessManager m_network;
@@ -147,6 +148,7 @@ private:
     QString m_assistantText;
     bool m_sawDone;
     bool m_sawFinish;
+    bool m_truncated = false;
     bool m_messageStarted;
     bool m_messageDelta;
     QMap<int, QString> m_contentBlocks;
@@ -157,7 +159,7 @@ private:
     QString m_pendingImage;
     bool m_imageProcessing = false;
     QFutureWatcher<QString> m_imageWatcher;
-    bool m_imageSchemaReady = false;
+    bool m_messageSchemaReady = false;
 };
 
 #endif

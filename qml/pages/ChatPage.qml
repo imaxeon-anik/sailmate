@@ -22,6 +22,41 @@ Page {
         })
     }
 
+    function messageEntry(source) {
+        return {
+            role: String(source.role || ""),
+            content: String(source.content || ""),
+            status: String(source.status || ""),
+            image: String(source.image || ""),
+            truncated: !!source.truncated
+        }
+    }
+
+    function syncMessages() {
+        var source = chat.messages
+        var follow = messages.atYEnd || source.length > messageModel.count
+        // Streaming only changes the last exchange, so skip comparing every earlier row and photo.
+        var start = 0
+        if (source.length === messageModel.count && source.length > 0
+                && messageModel.get(0).content === String(source[0].content || ""))
+            start = Math.max(0, source.length - 2)
+        while (messageModel.count > source.length)
+            messageModel.remove(messageModel.count - 1)
+        for (var index = start; index < source.length; ++index) {
+            var entry = messageEntry(source[index])
+            if (index >= messageModel.count) {
+                messageModel.append(entry)
+                continue
+            }
+            var current = messageModel.get(index)
+            if (current.role !== entry.role || current.content !== entry.content
+                    || current.status !== entry.status || current.image !== entry.image
+                    || current.truncated !== entry.truncated)
+                messageModel.set(index, entry)
+        }
+        if (follow) scrollTimer.restart()
+    }
+
     function connectSavedKey() {
         if (chat.busy || vault.busy || chat.unsaved) return
         chat.clearError()
@@ -36,7 +71,7 @@ Page {
         id: messages
         anchors { top: parent.top; left: parent.left; right: parent.right; bottom: composer.top }
         clip: true
-        model: chat.messages
+        model: ListModel { id: messageModel }
         spacing: Theme.paddingMedium
         header: Column {
             width: messages.width
@@ -75,12 +110,16 @@ Page {
             enabled: !chat.imageBusy
             MenuItem { text: "Home"; enabled: !chat.busy && !vault.busy && !chat.unsaved; onClicked: app.showProviders() }
             MenuItem { text: "Change model"; enabled: !chat.busy && !vault.busy && !chat.unsaved && chat.models.length > 0; onClicked: pageStack.push(Qt.resolvedUrl("ModelPage.qml")) }
-            MenuItem { text: "Start new chat"; enabled: !chat.busy && !vault.busy && !chat.unsaved; onClicked: chat.newChat() }
             MenuItem { text: "Update API key"; enabled: !chat.busy && !vault.busy && !chat.unsaved; onClicked: page.enterKey() }
+        }
+        PushUpMenu {
+            enabled: !chat.imageBusy
+            MenuItem { text: "Change model"; enabled: !chat.busy && !vault.busy && !chat.unsaved && chat.models.length > 0; onClicked: pageStack.push(Qt.resolvedUrl("ModelPage.qml")) }
+            MenuItem { text: "Home"; enabled: !chat.busy && !vault.busy && !chat.unsaved; onClicked: app.showProviders() }
         }
         delegate: Item {
             id: messageRow
-            property bool fromUser: modelData.role === "user"
+            property bool fromUser: model.role === "user"
             width: messages.width
             height: messageContent.height + 2 * Theme.paddingMedium
 
@@ -111,7 +150,7 @@ Page {
                 }
                 Label {
                     width: parent.width
-                    text: modelData.content
+                    text: model.content
                     textFormat: Text.PlainText
                     horizontalAlignment: Text.AlignLeft
                     wrapMode: Text.Wrap
@@ -119,8 +158,8 @@ Page {
                 Image {
                     width: parent.width
                     height: visible ? Theme.itemSizeLarge * 2 : 0
-                    visible: !!modelData.image
-                    source: modelData.image || ""
+                    visible: model.image.length > 0
+                    source: model.image
                     sourceSize.width: 640
                     sourceSize.height: 640
                     fillMode: Image.PreserveAspectFit
@@ -129,8 +168,16 @@ Page {
                 }
                 Label {
                     width: parent.width
-                    visible: modelData.status === "failed"
+                    visible: model.status === "failed"
                     text: "Incomplete · not included in future requests"
+                    color: Theme.secondaryColor
+                    font.pixelSize: Theme.fontSizeExtraSmall
+                    wrapMode: Text.Wrap
+                }
+                Label {
+                    width: parent.width
+                    visible: model.truncated
+                    text: "Cut off at the length limit"
                     color: Theme.secondaryColor
                     font.pixelSize: Theme.fontSizeExtraSmall
                     wrapMode: Text.Wrap
@@ -201,7 +248,7 @@ Page {
             x: Theme.horizontalPageMargin
             width: parent.width - 2 * x
             visible: chat.pendingImage.length > 0
-            text: "Requires an image-capable model. The photo is sent to this provider and saved with this chat."
+            text: "Requires an image-capable model"
             wrapMode: Text.Wrap
             color: Theme.secondaryColor
             font.pixelSize: Theme.fontSizeSmall
@@ -317,11 +364,10 @@ Page {
     }
     Connections {
         target: chat
-        onMessagesChanged: {
-            if (messages.atYEnd || chat.messages.length <= 2)
-                scrollTimer.restart()
-        }
+        onMessagesChanged: page.syncMessages()
     }
+    Component.onCompleted: syncMessages()
+    onStatusChanged: if (status === PageStatus.Active) messages.positionViewAtEnd()
     Connections {
         target: vault
         onKeyLoaded: {
@@ -338,5 +384,9 @@ Page {
         }
         onErrorChanged: { if (vault.error) page.loadingKey = false }
     }
-    Timer { id: scrollTimer; interval: 50; onTriggered: messages.positionViewAtEnd() }
+    Timer {
+        id: scrollTimer
+        interval: 50
+        onTriggered: if (!messages.dragging && !messages.flicking) messages.positionViewAtEnd()
+    }
 }

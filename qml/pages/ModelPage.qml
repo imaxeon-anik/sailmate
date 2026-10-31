@@ -24,6 +24,16 @@ Page {
             EnterKey.iconSource: "image://theme/icon-m-enter-close"
             EnterKey.onClicked: focus = false
         }
+        Label {
+            x: Theme.horizontalPageMargin
+            width: parent.width - 2 * x
+            visible: text.length > 0
+            text: chat.error
+            textFormat: Text.PlainText
+            wrapMode: Text.Wrap
+            color: Theme.highlightColor
+            font.pixelSize: Theme.fontSizeSmall
+        }
     }
 
     SilicaListView {
@@ -38,7 +48,7 @@ Page {
             onClicked: {
                 if (chat.busy || vault.busy) return
                 chat.setModel(modelData)
-                pageStack.pop()
+                if (chat.model === modelData && !chat.error) pageStack.pop()
             }
             Label {
                 anchors { left: parent.left; right: parent.right; margins: Theme.horizontalPageMargin; verticalCenter: parent.verticalCenter }

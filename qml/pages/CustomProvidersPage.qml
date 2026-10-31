@@ -6,6 +6,14 @@ Page {
     allowedOrientations: Orientation.All
     backNavigation: !chat.busy && !vault.busy
     property string deletingProvider: ""
+    property string connectingProvider: ""
+
+    function openHistory(provider, key) {
+        chat.showProviderHistory(provider)
+        if (chat.error) return
+        if (key) chat.connectProvider(key)
+        pageStack.push(Qt.resolvedUrl("HistoryPage.qml"))
+    }
 
     SilicaListView {
         id: profiles
@@ -46,8 +54,13 @@ Page {
             }
             onClicked: {
                 if (chat.busy || vault.busy) return
-                chat.showProviderHistory(modelData.id)
-                if (!chat.error) pageStack.push(Qt.resolvedUrl("HistoryPage.qml"))
+                chat.clearError()
+                if (profileItem.saved) {
+                    page.connectingProvider = modelData.id
+                    vault.loadKey(modelData.id)
+                } else {
+                    page.openHistory(modelData.id, "")
+                }
             }
             Column {
                 id: info
@@ -140,8 +153,23 @@ Page {
                 chat.forgetProvider(provider)
             }
         }
+        onKeyLoaded: {
+            if (page.status === PageStatus.Active && provider === page.connectingProvider && !chat.busy) {
+                page.connectingProvider = ""
+                page.openHistory(provider, key)
+            }
+        }
+        onKeyMissing: {
+            if (page.status === PageStatus.Active && provider === page.connectingProvider) {
+                page.connectingProvider = ""
+                page.openHistory(provider, "")
+            }
+        }
         onErrorChanged: {
-            if (vault.error) page.deletingProvider = ""
+            if (vault.error) {
+                page.deletingProvider = ""
+                page.connectingProvider = ""
+            }
         }
     }
 }
